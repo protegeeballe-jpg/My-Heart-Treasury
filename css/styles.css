@@ -381,3 +381,16 @@ body.treasury-body {
     inset: 0;
     pointer-events: none;
 }
+/* Real Heartbeat Pulse Animation */
+@keyframes heartPulse {
+  0% { transform: scale(1); }
+  14% { transform: scale(1.12); }
+  28% { transform: scale(1); }
+  42% { transform: scale(1.15); }
+  70% { transform: scale(1); }
+}
+
+.beating-heart {
+  animation: heartPulse 1.4s infinite ease-in-out;
+  transform-origin: center;
+}
