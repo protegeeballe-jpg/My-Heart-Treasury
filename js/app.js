@@ -37,6 +37,55 @@ document.addEventListener('DOMContentLoaded', () => {
     const today = new Date().toISOString().split('T')[0];
     savingsDateInput.value = today;
 
+    // PIN Lock Check on App Startup
+    async function checkPinLock() {
+        const savedPin = await TreasuryStorage.getPin();
+        const pinModal = document.getElementById('pinLockModal');
+        const pinInput = document.getElementById('pinInput');
+        const submitPinBtn = document.getElementById('submitPinBtn');
+
+        if (savedPin) {
+            pinModal.classList.remove('hidden');
+            document.getElementById('pinModalTitle').textContent = "Unlock Your Treasury";
+            document.getElementById('pinModalDesc').textContent = "Enter your PIN code to access your vault.";
+            submitPinBtn.textContent = "Unlock";
+
+            submitPinBtn.onclick = async () => {
+                if (pinInput.value === savedPin) {
+                    pinModal.classList.add('hidden');
+                    pinInput.value = '';
+                } else {
+                    alert("⚠️ Incorrect PIN. Please try again.");
+                    pinInput.value = '';
+                }
+            };
+        }
+    }
+    checkPinLock();
+
+    // PIN Setup & Change Listener
+    document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
+        const currentPin = await TreasuryStorage.getPin();
+        
+        if (currentPin) {
+            const choice = confirm("PIN protection is active. Click OK to change or remove your PIN.");
+            if (!choice) return;
+        }
+
+        const newPin = prompt("Enter a 4 to 6-digit PIN code (leave blank to remove PIN protection):");
+        if (newPin === null) return; // Cancelled
+
+        if (newPin.trim() === "") {
+            await TreasuryStorage.removePin();
+            alert("🔒 PIN protection removed successfully.");
+        } else if (newPin.length >= 4 && newPin.length <= 6 && !isNaN(newPin)) {
+            await TreasuryStorage.setPin(newPin);
+            alert("✨ PIN set successfully!");
+        } else {
+            alert("⚠️ Invalid PIN. Please enter a 4 to 6-digit numerical code.");
+        }
+    });
+
     // Optimized Countdown Timer (Loads storage once to prevent UI lag)
     async function initSession() {
         cachedSession = await TreasuryStorage.getActiveSession();
