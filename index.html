@@ -4,20 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>My Heart Treasury</title>
-    <!-- PWA Manifest -->
+    
+    <!-- PWA Manifest & Theme -->
     <link rel="manifest" href="manifest.json">
-    <!-- IndexedDB Library -->
-    <script src="https://cdn.jsdelivr.net/npm/idb-keyval@6/dist/umd-min.js"></script>
+    <meta name="theme-color" content="#f43f5e">
+
     <!-- iOS Standalone App Support -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Heart Treasury">
-    <!-- Design & Styling -->
+
+    <!-- Styling & Icons -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#f43f5e">
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="treasury-body h-screen overflow-hidden flex flex-col justify-between p-4 pt-8">
@@ -33,6 +33,9 @@
         </div>
         
         <div class="flex items-center gap-1.5">
+            <button id="openPinSettingsBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" title="Set PIN Lock">
+                <i data-lucide="lock" class="w-4 h-4"></i>
+            </button>
             <button id="soundToggleBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" aria-label="Toggle Sound">
                 <i id="soundIcon" data-lucide="volume-2" class="w-4 h-4"></i>
             </button>
@@ -76,10 +79,10 @@
         </div>
 
         <!-- Big Beating Red Heart Button -->
-<button id="tapHeartBtn" class="heart-trigger-btn beating-heart group relative focus:outline-none transition-transform active:scale-95 flex items-center justify-center p-4" aria-label="Collect Heart">
-    <div class="absolute inset-0 bg-rose-500/20 blur-3xl rounded-full scale-125 animate-pulse"></div>
-    <i data-lucide="heart" class="heart-svg w-36 h-36 md:w-44 md:h-44 text-rose-500 fill-rose-500 drop-shadow-[0_0_35px_rgba(244,63,94,0.6)]"></i>
-</button>
+        <button id="tapHeartBtn" class="heart-trigger-btn beating-heart group relative focus:outline-none transition-transform active:scale-95 flex items-center justify-center p-4" aria-label="Collect Heart">
+            <div class="absolute inset-0 bg-rose-500/20 blur-3xl rounded-full scale-125 animate-pulse"></div>
+            <i data-lucide="heart" class="heart-svg w-36 h-36 md:w-44 md:h-44 text-rose-500 fill-rose-500 drop-shadow-[0_0_35px_rgba(244,63,94,0.6)]"></i>
+        </button>
         
         <p class="text-[11px] text-slate-400 text-center mt-6 max-w-[220px] font-medium leading-tight">
             Tap the heart to gather acts of kindness, love & forgiveness
@@ -102,6 +105,20 @@
             <i data-lucide="bookmark-plus" class="w-4 h-4"></i>
             <span>Save Vault</span>
         </button>
+    </div>
+
+    <!-- PIN Lock / Startup Modal -->
+    <div id="pinLockModal" class="fixed inset-0 bg-slate-950/90 z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-sm w-full text-center space-y-4 shadow-2xl">
+            <div class="text-rose-400 text-3xl" id="pinIcon">🔒</div>
+            <h2 id="pinModalTitle" class="text-xl font-bold text-slate-100">Unlock Your Treasury</h2>
+            <p id="pinModalDesc" class="text-xs text-slate-400">Enter your PIN code to access your vault.</p>
+            
+            <input type="password" id="pinInput" maxlength="6" class="w-full bg-slate-800 border border-slate-700 text-center text-2xl tracking-widest rounded-xl py-2.5 text-white focus:outline-none focus:border-rose-500" placeholder="••••">
+            
+            <button id="submitPinBtn" class="w-full bg-rose-500 hover:bg-rose-600 text-white font-semibold py-2.5 rounded-xl transition shadow-lg shadow-rose-500/20">Unlock</button>
+            <button id="cancelPinBtn" class="text-xs text-slate-500 hover:text-slate-400 hidden">Cancel</button>
+        </div>
     </div>
 
     <!-- Attachment Modal -->
