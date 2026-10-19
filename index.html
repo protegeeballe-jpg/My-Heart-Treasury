@@ -13,10 +13,10 @@
     <meta name="theme-color" content="#f43f5e">
     <link rel="stylesheet" href="css/styles.css">
 </head>
-<body class="treasury-body">
+<body class="treasury-body pb-28 md:pb-6">
 
-    <!-- Header -->
-    <header class="header-container">
+    <!-- Header (With Top Padding for Phone Notch / Status Bar) -->
+    <header class="header-container pt-6 md:pt-4">
         <div class="logo-group">
             <i data-lucide="heart" class="logo-icon text-rose-500 fill-rose-500"></i>
             <div>
@@ -83,7 +83,7 @@
         </section>
 
         <!-- Column 2: The Heart Vault & Tap Counter -->
-        <section class="glass-panel flex flex-col items-center justify-center relative overflow-hidden min-h-[380px]">
+        <section class="glass-panel flex flex-col items-center justify-center relative overflow-hidden min-h-[320px]">
             <div id="particleCanvas" class="particle-layer"></div>
 
             <span id="heartCountBadge" class="count-badge">0 Hearts</span>
@@ -94,21 +94,21 @@
             </button>
             
             <p class="tap-hint">Tap the heart to gather acts of kindness, love & forgiveness</p>
-
-            <!-- Attachment & Action Bar -->
-            <div class="action-bar">
-                <button id="openAttachmentModalBtn" class="btn-secondary">
-                    <i data-lucide="paperclip" class="w-4 h-4 text-rose-400"></i>
-                    <span id="attachmentIndicator">Attach Note/Media</span>
-                </button>
-
-                <button id="saveTreasuryBtn" class="btn-blue-save">
-                    <i data-lucide="bookmark-plus" class="w-5 h-5"></i>
-                    <span>Save to Vault</span>
-                </button>
-            </div>
         </section>
     </main>
+
+    <!-- Fixed Bottom Action Bar for Mobile Thumb Accessibility -->
+    <div class="fixed bottom-0 left-0 right-0 p-4 bg-slate-950/90 backdrop-blur-md border-t border-slate-800/80 flex gap-3 z-40 md:static md:bg-transparent md:border-0 md:p-0 md:max-w-md md:mx-auto md:-mt-6">
+        <button id="openAttachmentModalBtn" class="btn-secondary flex-1 justify-center py-3">
+            <i data-lucide="paperclip" class="w-4 h-4 text-rose-400"></i>
+            <span id="attachmentIndicator">Attach Note/Media</span>
+        </button>
+
+        <button id="saveTreasuryBtn" class="btn-blue-save flex-1 justify-center py-3">
+            <i data-lucide="bookmark-plus" class="w-5 h-5"></i>
+            <span>Save to Vault</span>
+        </button>
+    </div>
 
     <!-- Attachment Modal (Notes, Photos, 3s Video) -->
     <div id="attachmentModal" class="modal-backdrop hidden">
