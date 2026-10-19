@@ -24,11 +24,11 @@ document.addEventListener('DOMContentLoaded', () => {
     savingsDateInput.value = today;
 
     // Countdown Timer
-    function updateCountdown() {
-        const savedSession = TreasuryStorage.getActiveSession();
+    async function updateCountdown() {
+        const savedSession = await TreasuryStorage.getActiveSession();
         if (!savedSession) {
             const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-            TreasuryStorage.setActiveSession({ targetTime, duration: selectedDurationHours });
+            await TreasuryStorage.setActiveSession({ targetTime, duration: selectedDurationHours });
             return updateCountdown();
         }
 
@@ -46,13 +46,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Duration Selector Buttons
     document.querySelectorAll('.btn-duration').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
             document.querySelectorAll('.btn-duration').forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
             selectedDurationHours = parseInt(e.target.dataset.duration);
             
             const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-            TreasuryStorage.setActiveSession({ targetTime, duration: selectedDurationHours });
+            await TreasuryStorage.setActiveSession({ targetTime, duration: selectedDurationHours });
             updateCountdown();
         });
     });
@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Save Treasury Entry
-    saveTreasuryBtn.addEventListener('click', () => {
+    saveTreasuryBtn.addEventListener('click', async () => {
         if (currentHeartCount === 0) {
             alert("Tap the heart to collect acts of kindness, love & forgiveness first!");
             return;
@@ -99,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
             attachment: MediaController.pendingAttachment
         };
 
-        TreasuryStorage.saveDayEntry(dateKey, sessionPayload);
+        await TreasuryStorage.saveDayEntry(dateKey, sessionPayload);
 
         alert(`Successfully deposited ${currentHeartCount} hearts to ${dateKey}!`);
         
@@ -181,8 +181,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const calendarModal = document.getElementById('calendarModal');
     const calendarGrid = document.getElementById('calendarGrid');
 
-    document.getElementById('openCalendarBtn').addEventListener('click', () => {
-        renderCalendar();
+    document.getElementById('openCalendarBtn').addEventListener('click', async () => {
+        await renderCalendar();
         calendarModal.classList.remove('hidden');
     });
 
@@ -190,9 +190,9 @@ document.addEventListener('DOMContentLoaded', () => {
         calendarModal.classList.add('hidden');
     });
 
-    function renderCalendar() {
+    async function renderCalendar() {
         calendarGrid.innerHTML = '';
-        const db = TreasuryStorage.getDatabase();
+        const db = await TreasuryStorage.getDatabase();
         const now = new Date();
         const year = now.getFullYear();
         const month = now.getMonth();
@@ -211,12 +211,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${db[dateStr] ? `<span class="text-[10px]">❤️ ${db[dateStr].totalHearts}</span>` : ''}
             `;
 
-            dayCell.addEventListener('click', () => {
+            dayCell.addEventListener('click', async () => {
                 currentSelectedDateKey = dateStr;
                 document.getElementById('selectedDateTitle').textContent = dateStr;
                 
-                if (db[dateStr]) {
-                    document.getElementById('selectedDateHeartsCount').textContent = `Total hearts: ${db[dateStr].totalHearts}`;
+                const freshDb = await TreasuryStorage.getDatabase();
+                if (freshDb[dateStr]) {
+                    document.getElementById('selectedDateHeartsCount').textContent = `Total hearts: ${freshDb[dateStr].totalHearts}`;
                     document.getElementById('viewMemoriesBtn').classList.remove('hidden');
                 } else {
                     document.getElementById('selectedDateHeartsCount').textContent = 'No hearts saved on this day';
@@ -230,8 +231,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const timelineModal = document.getElementById('timelineModal');
     
-    document.getElementById('viewMemoriesBtn').addEventListener('click', () => {
-        const db = TreasuryStorage.getDatabase();
+    document.getElementById('viewMemoriesBtn').addEventListener('click', async () => {
+        const db = await TreasuryStorage.getDatabase();
         const dayData = db[currentSelectedDateKey];
         const timelineList = document.getElementById('timelineList');
         
