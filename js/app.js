@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let selectedDurationHours = 24;
     let activeTimerInterval = null;
     let currentSelectedDateKey = null;
+    let cachedSession = null;
 
     // DOM References
     const savingsDateInput = document.getElementById('savingsDate');
@@ -36,16 +37,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const today = new Date().toISOString().split('T')[0];
     savingsDateInput.value = today;
 
-    // Countdown Timer
-    async function updateCountdown() {
-        const savedSession = await TreasuryStorage.getActiveSession();
-        if (!savedSession) {
+    // Optimized Countdown Timer (Loads storage once to prevent UI lag)
+    async function initSession() {
+        cachedSession = await TreasuryStorage.getActiveSession();
+        if (!cachedSession) {
             const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-            await TreasuryStorage.setActiveSession({ targetTime, duration: selectedDurationHours });
-            return updateCountdown();
+            cachedSession = { targetTime, duration: selectedDurationHours };
+            await TreasuryStorage.setActiveSession(cachedSession);
         }
+        updateCountdownDisplay();
+    }
 
-        const diff = Math.max(0, Math.floor((savedSession.targetTime - Date.now()) / 1000));
+    function updateCountdownDisplay() {
+        if (!cachedSession) return;
+
+        const diff = Math.max(0, Math.floor((cachedSession.targetTime - Date.now()) / 1000));
         const hours = Math.floor(diff / 3600);
         const minutes = Math.floor((diff % 3600) / 60);
         const seconds = diff % 60;
@@ -53,9 +59,9 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionCountdown.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     }
 
+    initSession();
     clearInterval(activeTimerInterval);
-    activeTimerInterval = setInterval(updateCountdown, 1000);
-    updateCountdown();
+    activeTimerInterval = setInterval(updateCountdownDisplay, 1000);
 
     // Duration Selector Buttons
     document.querySelectorAll('.btn-duration').forEach(btn => {
@@ -65,8 +71,9 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedDurationHours = parseInt(e.target.dataset.duration);
             
             const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-            await TreasuryStorage.setActiveSession({ targetTime, duration: selectedDurationHours });
-            updateCountdown();
+            cachedSession = { targetTime, duration: selectedDurationHours };
+            await TreasuryStorage.setActiveSession(cachedSession);
+            updateCountdownDisplay();
         });
     });
 
@@ -119,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentHeartCount = 0;
         heartCountBadge.textContent = "0 Hearts";
         MediaController.pendingAttachment = null;
-        document.getElementById('attachmentIndicator').textContent = "Attach Note/Media";
+        document.getElementById('attachmentIndicator').textContent = "Attach";
     });
 
     // Attachment Modal Handlers
@@ -300,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = e.target.files[0];
         if (file) {
             TreasuryStorage.importData(file, (success) => {
-                if (success) {
+                if (success)  {
                     alert('Treasury backup successfully imported! Reloading page...');
                     location.reload();
                 } else {
