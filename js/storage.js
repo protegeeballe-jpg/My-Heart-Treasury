@@ -21,8 +21,17 @@ const TreasuryStorage = {
             db[dateStr].entries.push(sessionData.attachment);
         }
 
-        localStorage.setItem(this.KEY_TREASURY, JSON.stringify(db));
-        return db[dateStr];
+        try {
+            localStorage.setItem(this.KEY_TREASURY, JSON.stringify(db));
+            return db[dateStr];
+        } catch (err) {
+            if (err.name === 'QuotaExceededError' || err.code === 22) {
+                alert("⚠️ Storage Limit Reached! Videos and photos take up space. Try exporting your backup JSON file and clearing older entries to free up space.");
+            } else {
+                alert("⚠️ Error saving to device storage: " + err.message);
+            }
+            throw err;
+        }
     },
 
     getActiveSession() {
