@@ -1,17 +1,22 @@
 /**
- * LocalStorage repository & Export/Import manager for My Heart Treasury.
+ * IndexedDB repository & Export/Import manager for My Heart Treasury.
  */
 const TreasuryStorage = {
     KEY_TREASURY: 'my_heart_treasury_db_v1',
     KEY_SESSION: 'my_heart_active_session_v1',
 
-    getDatabase() {
-        const raw = localStorage.getItem(this.KEY_TREASURY);
-        return raw ? JSON.parse(raw) : {};
+    async getDatabase() {
+        try {
+            const db = await idbKeyval.get(this.KEY_TREASURY);
+            return db || {};
+        } catch (err) {
+            console.error('Failed to load database from IndexedDB:', err);
+            return {};
+        }
     },
 
-    saveDayEntry(dateStr, sessionData) {
-        const db = this.getDatabase();
+    async saveDayEntry(dateStr, sessionData) {
+        const db = await this.getDatabase();
         if (!db[dateStr]) {
             db[dateStr] = { totalHearts: 0, entries: [] };
         }
@@ -22,53 +27,62 @@ const TreasuryStorage = {
         }
 
         try {
-            localStorage.setItem(this.KEY_TREASURY, JSON.stringify(db));
+            await idbKeyval.set(this.KEY_TREASURY, db);
             return db[dateStr];
         } catch (err) {
-            if (err.name === 'QuotaExceededError' || err.code === 22) {
-                alert("⚠️ Storage Limit Reached! Videos and photos take up space. Try exporting your backup JSON file and clearing older entries to free up space.");
-            } else {
-                alert("⚠️ Error saving to device storage: " + err.message);
-            }
+            alert("⚠️ Error saving to device storage: " + err.message);
             throw err;
         }
     },
 
-    getActiveSession() {
-        const raw = localStorage.getItem(this.KEY_SESSION);
-        return raw ? JSON.parse(raw) : null;
+    async getActiveSession() {
+        try {
+            return await idbKeyval.get(this.KEY_SESSION) || null;
+        } catch (err) {
+            console.error('Failed to load active session:', err);
+            return null;
+        }
     },
 
-    setActiveSession(sessionConfig) {
-        localStorage.setItem(this.KEY_SESSION, JSON.stringify(sessionConfig));
+    async setActiveSession(sessionConfig) {
+        try {
+            await idbKeyval.set(this.KEY_SESSION, sessionConfig);
+        } catch (err) {
+            console.error('Failed to set active session:', err);
+        }
     },
 
-    exportData() {
-        const backupData = {
-            treasury: this.getDatabase(),
-            session: this.getActiveSession()
-        };
-        const jsonStr = JSON.stringify(backupData, null, 2);
-        const blob = new Blob([jsonStr], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `heart_treasury_backup_${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+    async exportData() {
+        try {
+            const backupData = {
+                treasury: await this.getDatabase(),
+                session: await this.getActiveSession()
+            };
+            const jsonStr = JSON.stringify(backupData, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `heart_treasury_backup_${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Export failed:', err);
+            alert("⚠️ Export failed: " + err.message);
+        }
     },
 
     importData(file, onComplete) {
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
                 const parsed = JSON.parse(e.target.result);
                 if (parsed.treasury) {
-                    localStorage.setItem(this.KEY_TREASURY, JSON.stringify(parsed.treasury));
+                    await idbKeyval.set(this.KEY_TREASURY, parsed.treasury);
                 }
                 if (parsed.session) {
-                    localStorage.setItem(this.KEY_SESSION, JSON.stringify(parsed.session));
+                    await idbKeyval.set(this.KEY_SESSION, parsed.session);
                 }
                 onComplete(true);
             } catch (err) {
