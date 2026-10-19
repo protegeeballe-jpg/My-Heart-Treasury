@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>My Heart Treasury</title>
     
     <!-- Design & Styling -->
@@ -13,104 +13,91 @@
     <meta name="theme-color" content="#f43f5e">
     <link rel="stylesheet" href="css/styles.css">
 </head>
-<body class="treasury-body pb-28 md:pb-6">
+<body class="treasury-body h-screen overflow-hidden flex flex-col justify-between p-4 pt-8">
 
-    <!-- Header (With Top Padding for Phone Notch / Status Bar) -->
-    <header class="header-container pt-6 md:pt-4">
-        <div class="logo-group">
-            <i data-lucide="heart" class="logo-icon text-rose-500 fill-rose-500"></i>
+    <!-- Compact App Header -->
+    <header class="flex items-center justify-between w-full max-w-md mx-auto">
+        <div class="flex items-center gap-2">
+            <i data-lucide="heart" class="w-6 h-6 text-rose-500 fill-rose-500 animate-pulse"></i>
             <div>
-                <h1 class="logo-title">My Heart Treasury</h1>
-                <p class="logo-subtitle">Collect kindness, love & forgiveness daily</p>
+                <h1 class="text-base font-bold text-white tracking-tight leading-none">My Heart Treasury</h1>
+                <p class="text-[11px] text-slate-400 mt-0.5">Kindness, love & forgiveness daily</p>
             </div>
         </div>
         
-        <div class="header-actions">
-            <!-- Mute Audio Button -->
-            <button id="soundToggleBtn" class="btn-icon" aria-label="Toggle Sound" title="Mute/Unmute Audio">
-                <i id="soundIcon" data-lucide="volume-2" class="w-5 h-5 text-rose-400"></i>
+        <div class="flex items-center gap-1.5">
+            <button id="soundToggleBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" aria-label="Toggle Sound">
+                <i id="soundIcon" data-lucide="volume-2" class="w-4 h-4"></i>
             </button>
-
-            <!-- Export Treasury Backup -->
-            <button id="exportBtn" class="btn-icon" title="Export Backup JSON">
-                <i data-lucide="download" class="w-5 h-5 text-rose-400"></i>
+            <button id="exportBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" title="Export Backup">
+                <i data-lucide="download" class="w-4 h-4"></i>
             </button>
-
-            <!-- Import Treasury Backup -->
-            <label id="importBtnLabel" class="btn-icon cursor-pointer" title="Import Backup JSON">
-                <i data-lucide="upload" class="w-5 h-5 text-rose-400"></i>
+            <label id="importBtnLabel" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400 cursor-pointer" title="Import Backup">
+                <i data-lucide="upload" class="w-4 h-4"></i>
                 <input type="file" id="importFileInput" accept=".json" class="hidden">
             </label>
-
-            <!-- Open Calendar Modal -->
-            <button id="openCalendarBtn" class="btn-primary">
-                <i data-lucide="calendar" class="w-4 h-4"></i>
-                <span>Calendar Window</span>
-            </button>
         </div>
     </header>
 
-    <!-- Main Workspace Grid -->
-    <main class="workspace-grid">
-
-        <!-- Column 1: Config & Active Session -->
-        <section class="glass-panel space-y-6">
-            <div class="section-title">
-                <i data-lucide="clock" class="text-rose-400"></i>
-                <h2>Session Setup</h2>
+    <!-- Compact Session Bar -->
+    <section class="bg-slate-900/80 backdrop-blur-md rounded-2xl p-3 border border-slate-800 w-full max-w-md mx-auto my-auto space-y-2">
+        <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center gap-1.5 text-slate-300 font-medium">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 text-rose-400"></i>
+                <input type="date" id="savingsDate" class="bg-transparent text-slate-200 focus:outline-none font-semibold">
             </div>
-
-            <div class="space-y-4">
-                <div>
-                    <label class="form-label" for="savingsDate">Savings Date</label>
-                    <input type="date" id="savingsDate" class="form-input">
-                </div>
-
-                <div>
-                    <label class="form-label">Duration Target</label>
-                    <div class="grid grid-cols-3 gap-2">
-                        <button type="button" data-duration="24" class="btn-duration active">24 Hours</button>
-                        <button type="button" data-duration="36" class="btn-duration">36 Hours</button>
-                        <button type="button" data-duration="72" class="btn-duration">72 Hours</button>
-                    </div>
-                </div>
-
-                <div class="timer-display-card">
-                    <span class="timer-label">Session Time Remaining</span>
-                    <div id="sessionCountdown" class="timer-value">24:00:00</div>
-                </div>
+            <div class="flex items-center gap-1 bg-slate-800/60 p-1 rounded-lg">
+                <button type="button" data-duration="24" class="btn-duration active px-2 py-0.5 text-[10px]">24h</button>
+                <button type="button" data-duration="36" class="btn-duration px-2 py-0.5 text-[10px]">36h</button>
+                <button type="button" data-duration="72" class="btn-duration px-2 py-0.5 text-[10px]">72h</button>
             </div>
-        </section>
+        </div>
 
-        <!-- Column 2: The Heart Vault & Tap Counter -->
-        <section class="glass-panel flex flex-col items-center justify-center relative overflow-hidden min-h-[320px]">
-            <div id="particleCanvas" class="particle-layer"></div>
+        <div class="flex items-center justify-between bg-slate-950/60 px-3 py-1.5 rounded-xl border border-slate-800/60">
+            <span class="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Remaining</span>
+            <div id="sessionCountdown" class="text-sm font-mono font-bold text-rose-400 tracking-wider">24:00:00</div>
+        </div>
+    </section>
 
-            <span id="heartCountBadge" class="count-badge">0 Hearts</span>
+    <!-- The Beating Heart Centerpiece -->
+    <section class="flex-1 flex flex-col items-center justify-center relative w-full max-w-md mx-auto my-auto">
+        <div id="particleCanvas" class="particle-layer"></div>
 
-            <!-- Main Interactive Red Heart -->
-            <button id="tapHeartBtn" class="heart-trigger-btn" aria-label="Collect Heart">
-                <i data-lucide="heart" class="heart-svg"></i>
-            </button>
-            
-            <p class="tap-hint">Tap the heart to gather acts of kindness, love & forgiveness</p>
-        </section>
-    </main>
+        <!-- Heart Badge Counter -->
+        <div class="mb-4">
+            <span id="heartCountBadge" class="px-4 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-300 font-bold text-sm tracking-wide shadow-lg shadow-rose-500/5">0 Hearts</span>
+        </div>
 
-    <!-- Fixed Bottom Action Bar for Mobile Thumb Accessibility -->
-    <div class="fixed bottom-0 left-0 right-0 p-4 bg-slate-950/90 backdrop-blur-md border-t border-slate-800/80 flex gap-3 z-40 md:static md:bg-transparent md:border-0 md:p-0 md:max-w-md md:mx-auto md:-mt-6">
-        <button id="openAttachmentModalBtn" class="btn-secondary flex-1 justify-center py-3">
-            <i data-lucide="paperclip" class="w-4 h-4 text-rose-400"></i>
-            <span id="attachmentIndicator">Attach Note/Media</span>
+        <!-- Big Beating Red Heart Button -->
+        <button id="tapHeartBtn" class="heart-trigger-btn group relative focus:outline-none transition-transform active:scale-95" aria-label="Collect Heart">
+            <div class="absolute inset-0 bg-rose-500/20 blur-3xl rounded-full scale-125 animate-pulse"></div>
+            <i data-lucide="heart" class="heart-svg beating-heart w-36 h-36 md:w-44 md:h-44 text-rose-500 fill-rose-500 drop-shadow-[0_0_35px_rgba(244,63,94,0.6)]"></i>
+        </button>
+        
+        <p class="text-[11px] text-slate-400 text-center mt-6 max-w-[220px] font-medium leading-tight">
+            Tap the heart to gather acts of kindness, love & forgiveness
+        </p>
+    </section>
+
+    <!-- Bottom Action Bar: Calendar, Attach & Save -->
+    <div class="w-full max-w-md mx-auto grid grid-cols-3 gap-2 pt-2">
+        <button id="openCalendarBtn" class="py-3 px-2 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-xs flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
+            <i data-lucide="calendar" class="w-4 h-4 text-rose-400"></i>
+            <span>Calendar</span>
         </button>
 
-        <button id="saveTreasuryBtn" class="btn-blue-save flex-1 justify-center py-3">
-            <i data-lucide="bookmark-plus" class="w-5 h-5"></i>
-            <span>Save to Vault</span>
+        <button id="openAttachmentModalBtn" class="py-3 px-2 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-xs flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
+            <i data-lucide="paperclip" class="w-4 h-4 text-rose-400"></i>
+            <span id="attachmentIndicator" class="truncate max-w-[90px]">Attach</span>
+        </button>
+
+        <button id="saveTreasuryBtn" class="py-3 px-2 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-semibold text-xs flex flex-col items-center justify-center gap-1 shadow-lg shadow-rose-500/20">
+            <i data-lucide="bookmark-plus" class="w-4 h-4"></i>
+            <span>Save Vault</span>
         </button>
     </div>
 
-    <!-- Attachment Modal (Notes, Photos, 3s Video) -->
+    <!-- Attachment Modal -->
     <div id="attachmentModal" class="modal-backdrop hidden">
         <div class="modal-card">
             <div class="modal-header">
@@ -124,7 +111,6 @@
                     <textarea id="heartNoteInput" rows="2" placeholder="Write a note of kindness, love, or forgiveness..." class="form-input"></textarea>
                 </div>
 
-                <!-- Media Tabs -->
                 <div class="space-y-2">
                     <label class="form-label">Add Media (Photo or 3s Video Clip)</label>
                     <div class="flex gap-2">
@@ -141,13 +127,11 @@
                     </div>
                 </div>
 
-                <!-- Live Camera Viewport -->
                 <div id="cameraViewportContainer" class="camera-preview hidden">
                     <video id="cameraPreview" autoplay muted playsinline class="w-full h-40 object-cover rounded-lg"></video>
                     <div id="recordProgress" class="progress-bar-fill"></div>
                 </div>
 
-                <!-- Preview Area -->
                 <div id="mediaPreviewBox" class="media-preview-container hidden">
                     <div id="previewContent"></div>
                     <button id="clearMediaBtn" class="btn-clear-media">Remove Media</button>
@@ -171,10 +155,8 @@
                 <button id="closeCalendarModalBtn" class="modal-close-btn">&times;</button>
             </div>
 
-            <!-- Calendar Days Grid -->
             <div id="calendarGrid" class="calendar-grid"></div>
 
-            <!-- Selected Date Stats Footer -->
             <div class="date-summary-card">
                 <div>
                     <h4 id="selectedDateTitle" class="font-semibold text-rose-300">Select a Date</h4>
