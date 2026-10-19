@@ -385,16 +385,18 @@ body.treasury-body {
     pointer-events: none;
 }
 
-/* Real Heartbeat Pulse Animation */
+/* Real Heartbeat Pulse Animation on the Wrapper Button */
 @keyframes heartPulse {
   0% { transform: scale(1); }
-  14% { transform: scale(1.12); }
-  28% { transform: scale(1); }
-  42% { transform: scale(1.15); }
+  15% { transform: scale(1.10); }
+  30% { transform: scale(1); }
+  45% { transform: scale(1.15); }
   70% { transform: scale(1); }
+  100% { transform: scale(1); }
 }
 
 .beating-heart {
   animation: heartPulse 1.4s infinite ease-in-out;
-  transform-origin: center;
+  transform-origin: center center;
+  will-change: transform;
 }
