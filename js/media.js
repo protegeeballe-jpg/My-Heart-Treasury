@@ -3,7 +3,6 @@
  */
 const MediaController = {
     pendingAttachment: null,
-    activeMedia: null,
     mediaRecorder: null,
     recordedChunks: [],
 
@@ -23,7 +22,10 @@ const MediaController = {
                 const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                    onComplete({ type: 'video', dataUrl: reader.result });
+                    // FIX: Save directly to pendingAttachment so the app can read it!
+                    const attachment = { type: 'video', dataUrl: reader.result };
+                    this.pendingAttachment = attachment;
+                    if (onComplete) onComplete(attachment);
                 };
                 reader.readAsDataURL(blob);
             };
@@ -34,7 +36,7 @@ const MediaController = {
             const interval = setInterval(() => {
                 elapsed += 100;
                 const progress = (elapsed / 3000) * 100;
-                progressBarElement.style.width = `${progress}%`;
+                if (progressBarElement) progressBarElement.style.width = `${progress}%`;
 
                 if (elapsed >= 3000) {
                     clearInterval(interval);
@@ -49,8 +51,23 @@ const MediaController = {
     readImageFile(file, onComplete) {
         const reader = new FileReader();
         reader.onload = (e) => {
-            onComplete({ type: 'photo', dataUrl: e.target.result });
+            // FIX: Save directly to pendingAttachment!
+            const attachment = { type: 'photo', dataUrl: e.target.result };
+            this.pendingAttachment = attachment;
+            if (onComplete) onComplete(attachment);
         };
         reader.readAsDataURL(file);
+    },
+
+    setNoteAttachment(text) {
+        if (text && text.trim() !== '') {
+            this.pendingAttachment = { type: 'note', text: text.trim() };
+        } else {
+            this.pendingAttachment = null;
+        }
+    },
+
+    clear() {
+        this.pendingAttachment = null;
     }
 };
