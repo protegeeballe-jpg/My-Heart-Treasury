@@ -1,4 +1,4 @@
-const CACHE_NAME = 'heart-treasury-v2';
+const CACHE_NAME = 'heart-treasury-v3';
 const assetsToCache = [
     './',
     './index.html',
@@ -10,7 +10,7 @@ const assetsToCache = [
     './js/app.js'
 ];
 
-// Install the service worker and cache all static assets
+// Install and cache core local assets
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
@@ -36,12 +36,21 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Serve cached content when offline, fallback to network
+// Fetch handler: Cache-first for local files, runtime caching for external CDNs (Tailwind, Fonts, Lucide)
 self.addEventListener('fetch', (event) => {
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
-            return cachedResponse || fetch(event.request).catch(() => {
-                // Fallback for network requests if offline
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+            return fetch(event.request).then((networkResponse) => {
+                // Dynamically cache external files as they are loaded online
+                return caches.open(CACHE_NAME).then((cache) => {
+                    cache.put(event.request, networkResponse.clone());
+                    return networkResponse;
+                });
+            }).catch(() => {
+                // Fallback for offline if resource is missing from cache
             });
         })
     );
