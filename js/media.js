@@ -12,7 +12,7 @@ const MediaController = {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             videoElement.srcObject = stream;
 
-            this.mediaRecorder = new MediaRecorder(stream);
+            this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
             this.mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) this.recordedChunks.push(e.data);
             };
@@ -22,7 +22,6 @@ const MediaController = {
                 const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
                 const reader = new FileReader();
                 reader.onloadend = () => {
-                    // FIX: Save directly to pendingAttachment so the app can read it!
                     const attachment = { type: 'video', dataUrl: reader.result };
                     this.pendingAttachment = attachment;
                     if (onComplete) onComplete(attachment);
@@ -51,10 +50,38 @@ const MediaController = {
     readImageFile(file, onComplete) {
         const reader = new FileReader();
         reader.onload = (e) => {
-            // FIX: Save directly to pendingAttachment!
-            const attachment = { type: 'photo', dataUrl: e.target.result };
-            this.pendingAttachment = attachment;
-            if (onComplete) onComplete(attachment);
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 800;
+                const MAX_HEIGHT = 800;
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+                } else {
+                    if (height > MAX_HEIGHT) {
+                        width *= MAX_HEIGHT / height;
+                        height = MAX_HEIGHT;
+                    }
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Compress image to JPEG at 80% quality to eliminate storage bloat
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                const attachment = { type: 'photo', dataUrl: dataUrl };
+                this.pendingAttachment = attachment;
+                if (onComplete) onComplete(attachment);
+            };
+            img.src = e.target.result;
         };
         reader.readAsDataURL(file);
     },
