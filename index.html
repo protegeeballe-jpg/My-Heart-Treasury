@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Heart Treasury</title>
+    
+    <!-- Design & Styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#f43f5e">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="treasury-body">
+
+    <!-- Header -->
+    <header class="header-container">
+        <div class="logo-group">
+            <i data-lucide="heart" class="logo-icon text-rose-500 fill-rose-500"></i>
+            <div>
+                <h1 class="logo-title">My Heart Treasury</h1>
+                <p class="logo-subtitle">Collect kindness, love & forgiveness daily</p>
+            </div>
+        </div>
+        
+        <div class="header-actions">
+            <!-- Mute Audio Button -->
+            <button id="soundToggleBtn" class="btn-icon" aria-label="Toggle Sound" title="Mute/Unmute Audio">
+                <i id="soundIcon" data-lucide="volume-2" class="w-5 h-5 text-rose-400"></i>
+            </button>
+
+            <!-- Export Treasury Backup -->
+            <button id="exportBtn" class="btn-icon" title="Export Backup JSON">
+                <i data-lucide="download" class="w-5 h-5 text-rose-400"></i>
+            </button>
+
+            <!-- Import Treasury Backup -->
+            <label id="importBtnLabel" class="btn-icon cursor-pointer" title="Import Backup JSON">
+                <i data-lucide="upload" class="w-5 h-5 text-rose-400"></i>
+                <input type="file" id="importFileInput" accept=".json" class="hidden">
+            </label>
+
+            <!-- Open Calendar Modal -->
+            <button id="openCalendarBtn" class="btn-primary">
+                <i data-lucide="calendar" class="w-4 h-4"></i>
+                <span>Calendar Window</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <main class="workspace-grid">
+
+        <!-- Column 1: Config & Active Session -->
+        <section class="glass-panel space-y-6">
+            <div class="section-title">
+                <i data-lucide="clock" class="text-rose-400"></i>
+                <h2>Session Setup</h2>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="form-label" for="savingsDate">Savings Date</label>
+                    <input type="date" id="savingsDate" class="form-input">
+                </div>
+
+                <div>
+                    <label class="form-label">Duration Target</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button type="button" data-duration="24" class="btn-duration active">24 Hours</button>
+                        <button type="button" data-duration="36" class="btn-duration">36 Hours</button>
+                        <button type="button" data-duration="72" class="btn-duration">72 Hours</button>
+                    </div>
+                </div>
+
+                <div class="timer-display-card">
+                    <span class="timer-label">Session Time Remaining</span>
+                    <div id="sessionCountdown" class="timer-value">24:00:00</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Column 2: The Heart Vault & Tap Counter -->
+        <section class="glass-panel flex flex-col items-center justify-center relative overflow-hidden min-h-[380px]">
+            <div id="particleCanvas" class="particle-layer"></div>
+
+            <span id="heartCountBadge" class="count-badge">0 Hearts</span>
+
+            <!-- Main Interactive Red Heart -->
+            <button id="tapHeartBtn" class="heart-trigger-btn" aria-label="Collect Heart">
+                <i data-lucide="heart" class="heart-svg"></i>
+            </button>
+            
+            <p class="tap-hint">Tap the heart to gather acts of kindness, love & forgiveness</p>
+
+            <!-- Attachment & Action Bar -->
+            <div class="action-bar">
+                <button id="openAttachmentModalBtn" class="btn-secondary">
+                    <i data-lucide="paperclip" class="w-4 h-4 text-rose-400"></i>
+                    <span id="attachmentIndicator">Attach Note/Media</span>
+                </button>
+
+                <button id="saveTreasuryBtn" class="btn-blue-save">
+                    <i data-lucide="bookmark-plus" class="w-5 h-5"></i>
+                    <span>Save to Vault</span>
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Attachment Modal (Notes, Photos, 3s Video) -->
+    <div id="attachmentModal" class="modal-backdrop hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Attach Memory Note</h3>
+                <button id="closeAttachmentModalBtn" class="modal-close-btn">&times;</button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="form-label">Memory Note (Kindness, Love & Forgiveness)</label>
+                    <textarea id="heartNoteInput" rows="2" placeholder="Write a note of kindness, love, or forgiveness..." class="form-input"></textarea>
+                </div>
+
+                <!-- Media Tabs -->
+                <div class="space-y-2">
+                    <label class="form-label">Add Media (Photo or 3s Video Clip)</label>
+                    <div class="flex gap-2">
+                        <label class="btn-media-choice">
+                            <i data-lucide="image" class="w-4 h-4"></i>
+                            <span>Upload Photo</span>
+                            <input type="file" id="photoInput" accept="image/*" class="hidden">
+                        </label>
+
+                        <button id="startRecorderBtn" class="btn-media-choice">
+                            <i data-lucide="video" class="w-4 h-4"></i>
+                            <span id="recorderStatusLabel">Record 3s Clip</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Camera Viewport -->
+                <div id="cameraViewportContainer" class="camera-preview hidden">
+                    <video id="cameraPreview" autoplay muted playsinline class="w-full h-40 object-cover rounded-lg"></video>
+                    <div id="recordProgress" class="progress-bar-fill"></div>
+                </div>
+
+                <!-- Preview Area -->
+                <div id="mediaPreviewBox" class="media-preview-container hidden">
+                    <div id="previewContent"></div>
+                    <button id="clearMediaBtn" class="btn-clear-media">Remove Media</button>
+                </div>
+            </div>
+
+            <div class="modal-footer mt-4">
+                <button id="confirmAttachmentBtn" class="btn-primary w-full justify-center">Confirm Attachment</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Calendar & History Modal -->
+    <div id="calendarModal" class="modal-backdrop hidden">
+        <div class="modal-card max-w-xl">
+            <div class="modal-header">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="calendar" class="text-rose-400 w-5 h-5"></i>
+                    <h3 id="calendarMonthLabel">Calendar Treasury</h3>
+                </div>
+                <button id="closeCalendarModalBtn" class="modal-close-btn">&times;</button>
+            </div>
+
+            <!-- Calendar Days Grid -->
+            <div id="calendarGrid" class="calendar-grid"></div>
+
+            <!-- Selected Date Stats Footer -->
+            <div class="date-summary-card">
+                <div>
+                    <h4 id="selectedDateTitle" class="font-semibold text-rose-300">Select a Date</h4>
+                    <p id="selectedDateHeartsCount" class="text-xs text-slate-400">Total hearts: 0</p>
+                </div>
+                <button id="viewMemoriesBtn" class="btn-secondary hidden">
+                    <i data-lucide="eye" class="w-4 h-4 text-rose-400"></i>
+                    <span>View Day's Memories</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timeline & Media Memories Modal -->
+    <div id="timelineModal" class="modal-backdrop hidden">
+        <div class="modal-card max-w-lg">
+            <div class="modal-header">
+                <h3 id="timelineModalTitle">Memories for Today</h3>
+                <button id="closeTimelineModalBtn" class="modal-close-btn">&times;</button>
+            </div>
+
+            <div id="timelineList" class="timeline-scroll-container"></div>
+        </div>
+    </div>
+
+    <!-- Modular Scripts -->
+    <script src="js/storage.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/media.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
