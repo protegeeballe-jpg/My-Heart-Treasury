@@ -46,6 +46,72 @@ document.addEventListener('DOMContentLoaded', () => {
         savingsDateInput.value = getTodayLocalDate();
     }
 
+    // Custom Designed Modal Utility (Replaces native browser alerts/prompts)
+    function showAppModal({ title, message, icon = '✨', isPrompt = false, isConfirm = false, inputPlaceholder = '••••', inputType = 'password' }) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('appModal');
+            const titleEl = document.getElementById('appModalTitle');
+            const descEl = document.getElementById('appModalDesc');
+            const iconEl = document.getElementById('appModalIcon');
+            const inputEl = document.getElementById('appModalInput');
+            const okBtn = document.getElementById('appModalOkBtn');
+            const cancelBtn = document.getElementById('appModalCancelBtn');
+
+            if (!modal) {
+                resolve(isPrompt ? null : true);
+                return;
+            }
+
+            titleEl.textContent = title;
+            descEl.textContent = message;
+            iconEl.textContent = icon;
+
+            // Configure input field for prompts
+            if (isPrompt) {
+                inputEl.classList.remove('hidden');
+                inputEl.type = inputType;
+                inputEl.placeholder = inputPlaceholder;
+                inputEl.value = '';
+                setTimeout(() => inputEl.focus(), 50);
+            } else {
+                inputEl.classList.add('hidden');
+            }
+
+            // Configure cancel button for confirms/prompts
+            if (isConfirm || isPrompt) {
+                cancelBtn.classList.remove('hidden');
+            } else {
+                cancelBtn.classList.add('hidden');
+            }
+
+            modal.classList.remove('hidden');
+
+            const cleanup = () => {
+                modal.classList.add('hidden');
+                okBtn.onclick = null;
+                cancelBtn.onclick = null;
+                inputEl.onkeydown = null;
+            };
+
+            okBtn.onclick = () => {
+                const val = inputEl.value;
+                cleanup();
+                resolve(isPrompt ? val : true);
+            };
+
+            cancelBtn.onclick = () => {
+                cleanup();
+                resolve(isPrompt ? null : false);
+            };
+
+            inputEl.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    okBtn.click();
+                }
+            };
+        });
+    }
+
     // PIN Lock Check on App Startup
     async function checkPinLock() {
         const savedPin = await TreasuryStorage.getPin();
@@ -64,7 +130,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     pinModal.classList.add('hidden');
                     pinInput.value = '';
                 } else {
-                    alert("⚠️ Incorrect PIN. Please try again.");
+                    await showAppModal({
+                        title: "Incorrect PIN",
+                        message: "⚠️ Incorrect PIN. Please try again.",
+                        icon: "⚠️"
+                    });
                     pinInput.value = '';
                 }
             };
@@ -72,32 +142,76 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     checkPinLock();
 
-    // PIN Setup & Change Listener (Secured against unauthorized overwrites)
+    // PIN Setup & Change Listener (Fully Custom Modal Workflow)
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
         const currentPin = await TreasuryStorage.getPin();
         
         if (currentPin) {
-            // Force user to verify current PIN before making any changes
-            const enteredCurrent = prompt("Enter your CURRENT PIN to proceed:");
+            const enteredCurrent = await showAppModal({
+                title: "Verify Current PIN",
+                message: "Enter your CURRENT PIN to proceed with changes:",
+                icon: "🔒",
+                isPrompt: true,
+                inputPlaceholder: "••••"
+            });
             if (enteredCurrent === null) return; // Cancelled
             
             if (enteredCurrent !== currentPin) {
-                alert("⚠️ Incorrect current PIN. Action cancelled.");
+                await showAppModal({
+                    title: "Incorrect PIN",
+                    message: "⚠️ Incorrect current PIN. Action cancelled.",
+                    icon: "⚠️"
+                });
                 return;
             }
         }
 
-        const newPin = prompt("Enter a 4 to 6-digit PIN code (leave blank to remove PIN protection):");
-        if (newPin === null) return; // Cancelled
+        const actionChoice = await showAppModal({
+            title: "PIN Management",
+            message: "Click OK to Set or Change your PIN.\nClick Cancel if you want to Remove PIN protection.",
+            icon: "🛡️",
+            isConfirm: true
+        });
 
-        if (newPin.trim() === "") {
-            await TreasuryStorage.removePin();
-            alert("🔒 PIN protection removed successfully.");
-        } else if (newPin.length >= 4 && newPin.length <= 6 && !isNaN(newPin)) {
-            await TreasuryStorage.setPin(newPin);
-            alert("✨ PIN set successfully!");
+        if (actionChoice) {
+            const newPin = await showAppModal({
+                title: "Set New PIN",
+                message: "Enter a new 4 to 6-digit numerical PIN code:",
+                icon: "🔑",
+                isPrompt: true,
+                inputPlaceholder: "4-6 digits"
+            });
+            if (newPin === null) return; // Cancelled
+
+            if (newPin.length >= 4 && newPin.length <= 6 && !isNaN(newPin)) {
+                await TreasuryStorage.setPin(newPin);
+                await showAppModal({
+                    title: "Success",
+                    message: "✨ PIN set successfully!",
+                    icon: "✨"
+                });
+            } else {
+                await showAppModal({
+                    title: "Invalid PIN",
+                    message: "⚠️ Please enter a valid 4 to 6-digit numerical code.",
+                    icon: "⚠️"
+                });
+            }
         } else {
-            alert("⚠️ Invalid PIN. Please enter a 4 to 6-digit numerical code.");
+            const confirmRemoval = await showAppModal({
+                title: "Remove PIN Protection",
+                message: "⚠️ Are you sure you want to completely remove PIN protection?",
+                icon: "🔓",
+                isConfirm: true
+            });
+            if (confirmRemoval) {
+                await TreasuryStorage.removePin();
+                await showAppModal({
+                    title: "Protection Removed",
+                    message: "🔒 PIN protection removed successfully.",
+                    icon: "🔒"
+                });
+            }
         }
     });
 
@@ -176,7 +290,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Save Treasury Entry
     saveTreasuryBtn?.addEventListener('click', async () => {
         if (currentHeartCount === 0) {
-            alert("Tap the heart to collect acts of kindness, love & forgiveness first!");
+            await showAppModal({
+                title: "Empty Treasury",
+                message: "Tap the heart to collect acts of kindness, love & forgiveness first!",
+                icon: "❤️"
+            });
             return;
         }
 
@@ -188,7 +306,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         await TreasuryStorage.saveDayEntry(dateKey, sessionPayload);
 
-        alert(`Successfully deposited ${currentHeartCount} hearts to ${dateKey}!`);
+        await showAppModal({
+            title: "Treasury Saved",
+            message: `Successfully deposited ${currentHeartCount} hearts to ${dateKey}! ✨`,
+            icon: "🌟"
+        });
         
         currentHeartCount = 0;
         if (heartCountBadge) heartCountBadge.textContent = "0 Hearts";
@@ -431,12 +553,20 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('importFileInput')?.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
-            TreasuryStorage.importData(file, (success) => {
+            TreasuryStorage.importData(file, async (success) => {
                 if (success) {
-                    alert('Treasury backup successfully imported! Reloading page...');
+                    await showAppModal({
+                        title: "Import Successful",
+                        message: "Treasury backup successfully imported! Reloading page...",
+                        icon: "📥"
+                    });
                     location.reload();
                 } else {
-                    alert('Import failed. Please make sure you selected a valid Heart Treasury JSON file.');
+                    await showAppModal({
+                        title: "Import Failed",
+                        message: "Please make sure you selected a valid Heart Treasury JSON file.",
+                        icon: "⚠️"
+                    });
                 }
             });
         }
