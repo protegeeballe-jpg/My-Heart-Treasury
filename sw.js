@@ -37,10 +37,17 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Network-First Fetch Strategy (Checks server first for latest updates, falls back to cache offline)
+// Network-First Fetch Strategy (Bypasses Google APIs to protect sync integrity)
 self.addEventListener('fetch', (event) => {
     // Only handle GET requests
     if (event.request.method !== 'GET') return;
+
+    const url = new URL(event.request.url);
+
+    // Bypass Service Worker cache for Google APIs and Authentication
+    if (url.hostname.includes('googleapis.com') || url.hostname.includes('google.com')) {
+        return;
+    }
 
     event.respondWith(
         fetch(event.request)
