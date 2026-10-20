@@ -125,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('pinModalDesc').textContent = "Enter your PIN code to access your vault.";
             submitPinBtn.textContent = "Unlock";
 
-            submitPinBtn.onclick = async () => {
+            const handleUnlock = async () => {
                 if (pinInput.value === savedPin) {
                     pinModal.classList.add('hidden');
                     pinInput.value = '';
@@ -138,11 +138,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     pinInput.value = '';
                 }
             };
+
+            submitPinBtn.onclick = handleUnlock;
+            
+            // Allow Enter key submission on startup PIN input
+            pinInput.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    handleUnlock();
+                }
+            };
         }
     }
     checkPinLock();
 
-    // PIN Setup & Change Listener (Fully Custom Modal Workflow)
+    // PIN Setup & Change Listener (Fully Custom Modal Workflow & Bulletproof Validation)
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
         const currentPin = await TreasuryStorage.getPin();
         
@@ -183,7 +192,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (newPin === null) return; // Cancelled
 
-            if (newPin.length >= 4 && newPin.length <= 6 && !isNaN(newPin)) {
+            // Strict Regex validation: exactly 4 to 6 digits
+            if (/^\d{4,6}$/.test(newPin)) {
                 await TreasuryStorage.setPin(newPin);
                 await showAppModal({
                     title: "Success",
