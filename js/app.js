@@ -112,6 +112,122 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // ==========================================
+    // ☁️ GOOGLE DRIVE CLOUD SYNC & PERSISTENCE
+    // ==========================================
+    const GOOGLE_CLIENT_ID = '493219318956-1r4ma1h1pp8qqjqf8djjfqrdhp2s6us4.apps.googleusercontent.com';
+    const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+
+    let tokenClient = null;
+    let accessToken = null;
+
+    // Hardens local storage against browser eviction
+    async function initStoragePersistence() {
+        if (navigator.storage && navigator.storage.persist) {
+            const isPersisted = await navigator.storage.persist();
+            console.log(`Storage persistence granted: ${isPersisted}`);
+        }
+    }
+    initStoragePersistence();
+
+    // Initialize Google Identity Services Token Client
+    function initGoogleAuth() {
+        if (typeof google !== 'undefined' && google.accounts) {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CLIENT_ID,
+                scope: DRIVE_SCOPE,
+                callback: async (tokenResponse) => {
+                    if (tokenResponse && tokenResponse.access_token) {
+                        accessToken = tokenResponse.access_token;
+                        await performDriveBackup();
+                    }
+                },
+            });
+        }
+    }
+
+    // Run auth init after page load
+    window.addEventListener('load', initGoogleAuth);
+
+    // Bind Cloud Sync Button
+    document.getElementById('gdriveSyncBtn')?.addEventListener('click', () => {
+        if (!tokenClient) {
+            initGoogleAuth();
+        }
+        
+        if (!accessToken) {
+            // Trigger Google OAuth Login popup
+            tokenClient?.requestAccessToken({ prompt: 'consent' });
+        } else {
+            performDriveBackup();
+        }
+    });
+
+    // Upload IndexedDB JSON Payload directly to Google Drive App Folder
+    async function performDriveBackup() {
+        try {
+            const syncStatusText = document.getElementById('attachmentIndicator');
+            if (syncStatusText) syncStatusText.textContent = "Syncing to Cloud...";
+
+            // Fetch all IndexedDB data using storage module
+            const dbDump = await TreasuryStorage.getDatabase();
+            const fileContent = JSON.stringify(dbDump, null, 2);
+
+            // Check if backup file already exists in drive.appdata
+            const searchRes = await fetch(
+                "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='treasury-backup.json'",
+                { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            const searchData = await searchRes.json();
+            const existingFile = searchData.files && searchData.files[0];
+
+            const metadata = {
+                name: 'treasury-backup.json',
+                mimeType: 'application/json',
+                parents: existingFile ? [] : ['appDataFolder']
+            };
+
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', new Blob([fileContent], { type: 'application/json' }));
+
+            let uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+            let method = 'POST';
+
+            if (existingFile) {
+                uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`;
+                method = 'PATCH';
+            }
+
+            const uploadRes = await fetch(uploadUrl, {
+                method: method,
+                headers: { Authorization: `Bearer ${accessToken}` },
+                body: form
+            });
+
+            if (uploadRes.ok) {
+                if (syncStatusText) syncStatusText.textContent = "Attach";
+                await showAppModal({
+                    title: "Sync Successful",
+                    message: "✨ Your treasury backup has been securely saved to your Google Drive App Folder!",
+                    icon: "☁️"
+                });
+            } else {
+                throw new Error(`Upload failed with status ${uploadRes.status}`);
+            }
+        } catch (err) {
+            console.error('Google Drive Sync Error:', err);
+            const syncStatusText = document.getElementById('attachmentIndicator');
+            if (syncStatusText) syncStatusText.textContent = "Attach";
+
+            await showAppModal({
+                title: "Sync Failed",
+                message: "⚠️ Could not complete Google Drive sync. Please check your internet connection.",
+                icon: "⚠️"
+            });
+        }
+    }
+
     // PIN Lock Check on App Startup
     async function checkPinLock() {
         const savedPin = await TreasuryStorage.getPin();
