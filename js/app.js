@@ -33,9 +33,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const saveTreasuryBtn = document.getElementById('saveTreasuryBtn');
     const particleCanvas = document.getElementById('particleCanvas');
 
-    // Default Savings Date to Today
-    const today = new Date().toISOString().split('T')[0];
-    savingsDateInput.value = today;
+    // Function to get today's date in YYYY-MM-DD using local device timezone
+    function getTodayLocalDate() {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    if (savingsDateInput) {
+        savingsDateInput.value = getTodayLocalDate();
+    }
 
     // PIN Lock Check on App Startup
     async function checkPinLock() {
@@ -44,7 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const pinInput = document.getElementById('pinInput');
         const submitPinBtn = document.getElementById('submitPinBtn');
 
-        if (savedPin) {
+        if (savedPin && pinModal) {
             pinModal.classList.remove('hidden');
             document.getElementById('pinModalTitle').textContent = "Unlock Your Treasury";
             document.getElementById('pinModalDesc').textContent = "Enter your PIN code to access your vault.";
@@ -63,13 +72,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     checkPinLock();
 
-    // PIN Setup & Change Listener
+    // PIN Setup & Change Listener (Secured against unauthorized overwrites)
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
         const currentPin = await TreasuryStorage.getPin();
         
         if (currentPin) {
-            const choice = confirm("PIN protection is active. Click OK to change or remove your PIN.");
-            if (!choice) return;
+            // Force user to verify current PIN before making any changes
+            const enteredCurrent = prompt("Enter your CURRENT PIN to proceed:");
+            if (enteredCurrent === null) return; // Cancelled
+            
+            if (enteredCurrent !== currentPin) {
+                alert("⚠️ Incorrect current PIN. Action cancelled.");
+                return;
+            }
         }
 
         const newPin = prompt("Enter a 4 to 6-digit PIN code (leave blank to remove PIN protection):");
@@ -86,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Optimized Countdown Timer (Loads storage once to prevent UI lag)
+    // Optimized Countdown Timer
     async function initSession() {
         cachedSession = await TreasuryStorage.getActiveSession();
         if (!cachedSession) {
@@ -98,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateCountdownDisplay() {
-        if (!cachedSession) return;
+        if (!cachedSession || !sessionCountdown) return;
 
         const diff = Math.max(0, Math.floor((cachedSession.targetTime - Date.now()) / 1000));
         const hours = Math.floor(diff / 3600);
@@ -127,19 +142,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Heart Counter & Particles
-    tapHeartBtn.addEventListener('click', (e) => {
+    tapHeartBtn?.addEventListener('click', (e) => {
         currentHeartCount++;
-        heartCountBadge.textContent = `${currentHeartCount} Hearts`;
+        if (heartCountBadge) heartCountBadge.textContent = `${currentHeartCount} Hearts`;
         AudioController.playHeartPop();
         spawnFloatingHeart(e);
     });
 
     function spawnFloatingHeart(event) {
+        if (!particleCanvas) return;
         const particle = document.createElement('div');
-        particle.innerHTML = '❤️';
+        particle.textContent = '❤️';
         particle.style.position = 'absolute';
-        particle.style.left = `${event.clientX - particleCanvas.getBoundingClientRect().left}px`;
-        particle.style.top = `${event.clientY - particleCanvas.getBoundingClientRect().top}px`;
+        
+        const rect = particleCanvas.getBoundingClientRect();
+        particle.style.left = `${event.clientX - rect.left}px`;
+        particle.style.top = `${event.clientY - rect.top}px`;
         particle.style.fontSize = `${Math.random() * 16 + 16}px`;
         particle.style.pointerEvents = 'none';
         particle.style.transition = 'all 1s ease-out';
@@ -156,13 +174,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Save Treasury Entry
-    saveTreasuryBtn.addEventListener('click', async () => {
+    saveTreasuryBtn?.addEventListener('click', async () => {
         if (currentHeartCount === 0) {
             alert("Tap the heart to collect acts of kindness, love & forgiveness first!");
             return;
         }
 
-        const dateKey = savingsDateInput.value;
+        const dateKey = savingsDateInput ? savingsDateInput.value : getTodayLocalDate();
         const sessionPayload = {
             hearts: currentHeartCount,
             attachment: MediaController.pendingAttachment
@@ -173,23 +191,24 @@ document.addEventListener('DOMContentLoaded', () => {
         alert(`Successfully deposited ${currentHeartCount} hearts to ${dateKey}!`);
         
         currentHeartCount = 0;
-        heartCountBadge.textContent = "0 Hearts";
+        if (heartCountBadge) heartCountBadge.textContent = "0 Hearts";
         MediaController.pendingAttachment = null;
-        document.getElementById('attachmentIndicator').textContent = "Attach";
+        const indicator = document.getElementById('attachmentIndicator');
+        if (indicator) indicator.textContent = "Attach";
     });
 
     // Attachment Modal Handlers
     const attachmentModal = document.getElementById('attachmentModal');
     
-    document.getElementById('openAttachmentModalBtn').addEventListener('click', () => {
-        attachmentModal.classList.remove('hidden');
+    document.getElementById('openAttachmentModalBtn')?.addEventListener('click', () => {
+        attachmentModal?.classList.remove('hidden');
     });
 
-    document.getElementById('closeAttachmentModalBtn').addEventListener('click', () => {
-        attachmentModal.classList.add('hidden');
+    document.getElementById('closeAttachmentModalBtn')?.addEventListener('click', () => {
+        attachmentModal?.classList.add('hidden');
     });
 
-    document.getElementById('photoInput').addEventListener('change', (e) => {
+    document.getElementById('photoInput')?.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
             MediaController.readImageFile(file, (media) => {
@@ -198,15 +217,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    document.getElementById('startRecorderBtn').addEventListener('click', () => {
+    document.getElementById('startRecorderBtn')?.addEventListener('click', () => {
         const cameraBox = document.getElementById('cameraViewportContainer');
         const videoElem = document.getElementById('cameraPreview');
         const progressElem = document.getElementById('recordProgress');
         
-        cameraBox.classList.remove('hidden');
+        cameraBox?.classList.remove('hidden');
         
         MediaController.startThreeSecondRecording(videoElem, progressElem, (media) => {
-            cameraBox.classList.add('hidden');
+            cameraBox?.classList.add('hidden');
             setMediaPreview(media);
         });
     });
@@ -214,24 +233,35 @@ document.addEventListener('DOMContentLoaded', () => {
     function setMediaPreview(media) {
         const previewBox = document.getElementById('mediaPreviewBox');
         const previewContent = document.getElementById('previewContent');
+        if (!previewBox || !previewContent) return;
+
         previewBox.classList.remove('hidden');
+        previewContent.innerHTML = ''; // Clear previous content
 
         if (media.type === 'photo') {
-            previewContent.innerHTML = `<img src="${media.dataUrl}" class="w-full h-32 object-cover rounded-md">`;
+            const img = document.createElement('img');
+            img.src = media.dataUrl;
+            img.className = 'w-full h-32 object-cover rounded-md';
+            previewContent.appendChild(img);
         } else {
-            previewContent.innerHTML = `<video src="${media.dataUrl}" controls class="w-full h-32 object-cover rounded-md"></video>`;
+            const video = document.createElement('video');
+            video.src = media.dataUrl;
+            video.controls = true;
+            video.className = 'w-full h-32 object-cover rounded-md';
+            previewContent.appendChild(video);
         }
 
         MediaController.activeMedia = media;
     }
 
-    document.getElementById('clearMediaBtn').addEventListener('click', () => {
+    document.getElementById('clearMediaBtn')?.addEventListener('click', () => {
         MediaController.activeMedia = null;
-        document.getElementById('mediaPreviewBox').classList.add('hidden');
+        document.getElementById('mediaPreviewBox')?.classList.add('hidden');
     });
 
-    document.getElementById('confirmAttachmentBtn').addEventListener('click', () => {
-        const noteText = document.getElementById('heartNoteInput').value.trim();
+    document.getElementById('confirmAttachmentBtn')?.addEventListener('click', () => {
+        const noteInput = document.getElementById('heartNoteInput');
+        const noteText = noteInput ? noteInput.value.trim() : '';
         
         MediaController.pendingAttachment = {
             note: noteText || null,
@@ -240,33 +270,38 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         if (noteText || MediaController.activeMedia) {
-            document.getElementById('attachmentIndicator').textContent = "Memory Attached ✨";
+            const indicator = document.getElementById('attachmentIndicator');
+            if (indicator) indicator.textContent = "Memory Attached ✨";
         }
 
-        attachmentModal.classList.add('hidden');
+        attachmentModal?.classList.add('hidden');
     });
 
     // Calendar & Timeline
     const calendarModal = document.getElementById('calendarModal');
     const calendarGrid = document.getElementById('calendarGrid');
 
-    document.getElementById('openCalendarBtn').addEventListener('click', async () => {
+    document.getElementById('openCalendarBtn')?.addEventListener('click', async () => {
         await renderCalendar();
-        calendarModal.classList.remove('hidden');
+        calendarModal?.classList.remove('hidden');
     });
 
-    document.getElementById('closeCalendarModalBtn').addEventListener('click', () => {
-        calendarModal.classList.add('hidden');
+    document.getElementById('closeCalendarModalBtn')?.addEventListener('click', () => {
+        calendarModal?.classList.add('hidden');
     });
 
     async function renderCalendar() {
+        if (!calendarGrid) return;
         calendarGrid.innerHTML = '';
         const db = await TreasuryStorage.getDatabase();
         const now = new Date();
         const year = now.getFullYear();
         const month = now.getMonth();
 
-        document.getElementById('calendarMonthLabel').textContent = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+        const monthLabel = document.getElementById('calendarMonthLabel');
+        if (monthLabel) {
+            monthLabel.textContent = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+        }
 
         const daysInMonth = new Date(year, month + 1, 0).getDate();
 
@@ -282,15 +317,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             dayCell.addEventListener('click', async () => {
                 currentSelectedDateKey = dateStr;
-                document.getElementById('selectedDateTitle').textContent = dateStr;
+                const titleElem = document.getElementById('selectedDateTitle');
+                if (titleElem) titleElem.textContent = dateStr;
                 
                 const freshDb = await TreasuryStorage.getDatabase();
+                const heartsCountElem = document.getElementById('selectedDateHeartsCount');
+                const viewMemoriesBtn = document.getElementById('viewMemoriesBtn');
+
                 if (freshDb[dateStr]) {
-                    document.getElementById('selectedDateHeartsCount').textContent = `Total hearts: ${freshDb[dateStr].totalHearts}`;
-                    document.getElementById('viewMemoriesBtn').classList.remove('hidden');
+                    if (heartsCountElem) heartsCountElem.textContent = `Total hearts: ${freshDb[dateStr].totalHearts}`;
+                    if (viewMemoriesBtn) viewMemoriesBtn.classList.remove('hidden');
                 } else {
-                    document.getElementById('selectedDateHeartsCount').textContent = 'No hearts saved on this day';
-                    document.getElementById('viewMemoriesBtn').classList.add('hidden');
+                    if (heartsCountElem) heartsCountElem.textContent = 'No hearts saved on this day';
+                    if (viewMemoriesBtn) viewMemoriesBtn.classList.add('hidden');
                 }
             });
 
@@ -300,63 +339,100 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const timelineModal = document.getElementById('timelineModal');
     
-    document.getElementById('viewMemoriesBtn').addEventListener('click', async () => {
+    // Secure Timeline Renderer (Safe from XSS Injection)
+    document.getElementById('viewMemoriesBtn')?.addEventListener('click', async () => {
         const db = await TreasuryStorage.getDatabase();
         const dayData = db[currentSelectedDateKey];
         const timelineList = document.getElementById('timelineList');
         
+        if (!timelineList) return;
         timelineList.innerHTML = '';
-        document.getElementById('timelineModalTitle').textContent = `Memories for ${currentSelectedDateKey}`;
+        
+        const modalTitle = document.getElementById('timelineModalTitle');
+        if (modalTitle) modalTitle.textContent = `Memories for ${currentSelectedDateKey}`;
 
-        if (dayData && dayData.entries.length > 0) {
+        if (dayData && dayData.entries && dayData.entries.length > 0) {
             dayData.entries.forEach(entry => {
                 const item = document.createElement('div');
                 item.className = 'p-3 bg-slate-800/80 rounded-lg border border-slate-700 space-y-2';
                 
-                item.innerHTML = `
-                    <div class="text-xs text-rose-300 font-semibold">${entry.timestamp}</div>
-                    ${entry.note ? `<p class="text-sm text-slate-200">${entry.note}</p>` : ''}
-                    ${entry.media ? (entry.media.type === 'photo' 
-                        ? `<img src="${entry.media.dataUrl}" class="w-full h-40 object-cover rounded">`
-                        : `<video src="${entry.media.dataUrl}" controls class="w-full h-40 object-cover rounded"></video>`) : ''}
-                `;
+                // Timestamp
+                const timeDiv = document.createElement('div');
+                timeDiv.className = 'text-xs text-rose-300 font-semibold';
+                timeDiv.textContent = entry.timestamp;
+                item.appendChild(timeDiv);
+
+                // Note (Safe textContent assignment to prevent XSS)
+                if (entry.note) {
+                    const notePara = document.createElement('p');
+                    notePara.className = 'text-sm text-slate-200';
+                    notePara.textContent = entry.note;
+                    item.appendChild(notePara);
+                }
+
+                // Media Attachment
+                if (entry.media) {
+                    if (entry.media.type === 'photo') {
+                        const img = document.createElement('img');
+                        img.src = entry.media.dataUrl;
+                        img.className = 'w-full h-40 object-cover rounded';
+                        item.appendChild(img);
+                    } else {
+                        const video = document.createElement('video');
+                        video.src = entry.media.dataUrl;
+                        video.controls = true;
+                        video.className = 'w-full h-40 object-cover rounded';
+                        item.appendChild(video);
+                    }
+                }
+
                 timelineList.appendChild(item);
             });
         } else {
-            timelineList.innerHTML = `<p class="text-slate-400 text-center py-4">No notes or media attachments saved for this date.</p>`;
+            const emptyPara = document.createElement('p');
+            emptyPara.className = 'text-slate-400 text-center py-4';
+            emptyPara.textContent = 'No notes or media attachments saved for this date.';
+            timelineList.appendChild(emptyPara);
         }
 
-        timelineModal.classList.remove('hidden');
+        timelineModal?.classList.remove('hidden');
     });
 
-    document.getElementById('closeTimelineModalBtn').addEventListener('click', () => {
-        timelineModal.classList.add('hidden');
+    document.getElementById('closeTimelineModalBtn')?.addEventListener('click', () => {
+        timelineModal?.classList.add('hidden');
     });
 
     // Audio Toggle Listener
-    document.getElementById('soundToggleBtn').addEventListener('click', () => {
+    document.getElementById('soundToggleBtn')?.addEventListener('click', () => {
         const isMuted = AudioController.toggleMute();
         const icon = document.getElementById('soundIcon');
-        if (isMuted) {
-            icon.setAttribute('data-lucide', 'volume-x');
-            icon.classList.replace('text-rose-400', 'text-slate-500');
-        } else {
-            icon.setAttribute('data-lucide', 'volume-2');
-            icon.classList.replace('text-slate-500', 'text-rose-400');
+        if (icon) {
+            if (isMuted) {
+                icon.setAttribute('data-lucide', 'volume-x');
+                icon.classList.replace('text-rose-400', 'text-slate-500');
+            } else {
+                icon.setAttribute('data-lucide', 'volume-2');
+                icon.classList.replace('text-slate-500', 'text-rose-400');
+            }
+            lucide.createIcons();
         }
-        lucide.createIcons();
     });
 
     // Export & Import Backup Listeners
-    document.getElementById('exportBtn').addEventListener('click', () => {
+    document.getElementById('exportBtn')?.addEventListener('click', () => {
         TreasuryStorage.exportData();
     });
 
-    document.getElementById('importFileInput').addEventListener('change', (e) => {
+    // Trigger file dialog on button click
+    document.getElementById('importBtn')?.addEventListener('click', () => {
+        document.getElementById('importFileInput')?.click();
+    });
+
+    document.getElementById('importFileInput')?.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (file) {
             TreasuryStorage.importData(file, (success) => {
-                if (success)  {
+                if (success) {
                     alert('Treasury backup successfully imported! Reloading page...');
                     location.reload();
                 } else {
