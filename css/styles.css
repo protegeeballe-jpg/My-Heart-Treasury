@@ -400,3 +400,10 @@ body.treasury-body {
   transform-origin: center center;
   will-change: transform;
 }
+
+/* Additional custom styles for custom app modal elements */
+#appModal input::placeholder {
+    color: #64748b;
+    letter-spacing: normal;
+    font-size: 1rem;
+}
