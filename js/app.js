@@ -268,7 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Heart Counter & Particles
     tapHeartBtn?.addEventListener('click', (e) => {
         currentHeartCount++;
-        if (heartCountBadge) heartCountBadge.textContent = `${currentHeartCount} Hearts`;
+        if (heartCountBadge) heartCountBadge.textContent = `${currentHeartCount} ${currentHeartCount === 1 ? 'Heart' : 'Hearts'}`;
         AudioController.playHeartPop();
         spawnFloatingHeart(e);
     });
@@ -297,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => particle.remove(), 1000);
     }
 
-    // Save Treasury Entry
+    // Save Treasury Entry (With Correct Singular/Plural Grammar)
     saveTreasuryBtn?.addEventListener('click', async () => {
         if (currentHeartCount === 0) {
             await showAppModal({
@@ -318,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         await showAppModal({
             title: "Treasury Saved",
-            message: `Successfully deposited ${currentHeartCount} hearts to ${dateKey}! ✨`,
+            message: `Successfully deposited ${currentHeartCount} ${currentHeartCount === 1 ? 'heart' : 'hearts'} to ${dateKey}! ✨`,
             icon: "🌟"
         });
         
