@@ -24,33 +24,33 @@
 </head>
 <body class="treasury-body h-screen overflow-hidden flex flex-col justify-between p-4 pt-8">
 
-  <!-- Compact App Header -->
-<header class="flex items-center justify-between w-full max-w-md mx-auto">
-    <div class="flex items-center gap-2">
-        <i data-lucide="heart" class="w-6 h-6 text-rose-500 fill-rose-500 animate-pulse"></i>
-        <div>
-            <h1 class="text-base font-bold text-white tracking-tight leading-none">My Heart Treasury</h1>
-            <p class="text-[11px] text-slate-400 mt-0.5">Kindness, love & forgiveness daily</p>
+    <!-- Compact App Header -->
+    <header class="flex items-center justify-between w-full max-w-md mx-auto">
+        <div class="flex items-center gap-2">
+            <i data-lucide="heart" class="w-6 h-6 text-rose-500 fill-rose-500 animate-pulse"></i>
+            <div>
+                <h1 class="text-base font-bold text-white tracking-tight leading-none">My Heart Treasury</h1>
+                <p class="text-[11px] text-slate-400 mt-0.5">Kindness, love & forgiveness daily</p>
+            </div>
         </div>
-    </div>
-    
-    <div class="flex items-center gap-1.5">
-        <button id="openPinSettingsBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" title="Set PIN Lock">
-            <i data-lucide="lock" class="w-4 h-4"></i>
-        </button>
-        <button id="soundToggleBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" aria-label="Toggle Sound">
-            <i id="soundIcon" data-lucide="volume-2" class="w-4 h-4"></i>
-        </button>
-        <button id="exportBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" title="Export Backup">
-            <i data-lucide="download" class="w-4 h-4"></i>
-        </button>
-        <label id="importBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400 cursor-pointer" title="Import Backup">
-            <i data-lucide="upload" class="w-4 h-4"></i>
-            <input type="file" id="importFileInput" accept=".json" class="hidden">
-        </label>
-    </div>
-</header>
-    
+        
+        <div class="flex items-center gap-1.5">
+            <button id="openPinSettingsBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" title="Set PIN Lock">
+                <i data-lucide="lock" class="w-4 h-4"></i>
+            </button>
+            <button id="soundToggleBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" aria-label="Toggle Sound">
+                <i id="soundIcon" data-lucide="volume-2" class="w-4 h-4"></i>
+            </button>
+            <button id="exportBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400" title="Export Backup">
+                <i data-lucide="download" class="w-4 h-4"></i>
+            </button>
+            <label id="importBtn" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-rose-400 cursor-pointer" title="Import Backup">
+                <i data-lucide="upload" class="w-4 h-4"></i>
+                <input type="file" id="importFileInput" accept=".json" class="hidden">
+            </label>
+        </div>
+    </header>
+
     <!-- Compact Session Bar -->
     <section class="bg-slate-900/80 backdrop-blur-md rounded-2xl p-3 border border-slate-800 w-full max-w-md mx-auto my-auto space-y-2">
         <div class="flex items-center justify-between text-xs">
@@ -120,6 +120,22 @@
             
             <button id="submitPinBtn" class="w-full bg-rose-500 hover:bg-rose-600 text-white font-semibold py-2.5 rounded-xl transition shadow-lg shadow-rose-500/20">Unlock</button>
             <button id="cancelPinBtn" class="text-xs text-slate-500 hover:text-slate-400 hidden">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Custom Styled App Modal / Dialog (Replaces native alerts/prompts) -->
+    <div id="appModal" class="fixed inset-0 bg-slate-950/90 z-50 flex items-center justify-center hidden">
+        <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-sm w-full text-center space-y-4 shadow-2xl">
+            <div class="text-rose-400 text-3xl" id="appModalIcon">✨</div>
+            <h2 id="appModalTitle" class="text-xl font-bold text-slate-100">Notice</h2>
+            <p id="appModalDesc" class="text-xs text-slate-400">Message goes here...</p>
+            
+            <input type="password" id="appModalInput" maxlength="6" class="w-full bg-slate-800 border border-slate-700 text-center text-2xl tracking-widest rounded-xl py-2.5 text-white focus:outline-none focus:border-rose-500 hidden" placeholder="••••">
+            
+            <div class="flex gap-2 pt-2">
+                <button id="appModalCancelBtn" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2.5 rounded-xl transition hidden">Cancel</button>
+                <button id="appModalOkBtn" class="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-semibold py-2.5 rounded-xl transition shadow-lg shadow-rose-500/20">OK</button>
+            </div>
         </div>
     </div>
 
