@@ -2,10 +2,7 @@
  * Main Application Orchestrator for My Heart Treasury.
  */
 document.addEventListener('DOMContentLoaded', async () => {
-    // 1. Initialize IndexedDB singleton first to guarantee storage state
     await TreasuryStorage.init();
-
-    // 2. Initialize icons
     lucide.createIcons();
 
     // Register Service Worker for Offline PWA Support
@@ -21,12 +18,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // App State
+    // App State & In-Memory Session PIN (Never saved to persistent storage)
     let currentHeartCount = 0;
     let selectedDurationHours = 24;
     let activeTimerInterval = null;
     let currentSelectedDateKey = null;
     let cachedSession = null;
+    let sessionPin = null;
 
     // DOM References
     const savingsDateInput = document.getElementById('savingsDate');
@@ -36,7 +34,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const saveTreasuryBtn = document.getElementById('saveTreasuryBtn');
     const particleCanvas = document.getElementById('particleCanvas');
 
-    // Function to get today's date in YYYY-MM-DD using local device timezone
     function getTodayLocalDate() {
         const today = new Date();
         const year = today.getFullYear();
@@ -49,7 +46,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         savingsDateInput.value = getTodayLocalDate();
     }
 
-    // Custom Designed Modal Utility (Replaces native browser alerts/prompts)
     function showAppModal({ title, message, icon = '✨', isPrompt = false, isConfirm = false, inputPlaceholder = '••••', inputType = 'password' }) {
         return new Promise((resolve) => {
             const modal = document.getElementById('appModal');
@@ -69,7 +65,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             descEl.textContent = message;
             iconEl.textContent = icon;
 
-            // Configure input field for prompts
             if (isPrompt) {
                 inputEl.classList.remove('hidden');
                 inputEl.type = inputType;
@@ -80,7 +75,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 inputEl.classList.add('hidden');
             }
 
-            // Configure cancel button for confirms/prompts
             if (isConfirm || isPrompt) {
                 cancelBtn.classList.remove('hidden');
             } else {
@@ -108,29 +102,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             };
 
             inputEl.onkeydown = (e) => {
-                if (e.key === 'Enter') {
-                    okBtn.click();
-                }
+                if (e.key === 'Enter') okBtn.click();
             };
         });
     }
 
-    // ==========================================
-    // ☁️ GOOGLE DRIVE CLOUD SYNC & PERSISTENCE
-    // ==========================================
+    // Google Drive Sync Setup
     const GOOGLE_CLIENT_ID = '493219318956-1r4ma1h1pp8qqjqf8djjfqrdhp2s6us4.apps.googleusercontent.com';
     const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
-
     let tokenClient = null;
     let accessToken = null;
-
-    async function initStoragePersistence() {
-        if (navigator.storage && navigator.storage.persist) {
-            const isPersisted = await navigator.storage.persist();
-            console.log(`Storage persistence granted: ${isPersisted}`);
-        }
-    }
-    initStoragePersistence();
 
     function initGoogleAuth() {
         if (typeof google !== 'undefined' && google.accounts) {
@@ -146,14 +127,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
     }
-
     window.addEventListener('load', initGoogleAuth);
 
     document.getElementById('gdriveSyncBtn')?.addEventListener('click', () => {
-        if (!tokenClient) {
-            initGoogleAuth();
-        }
-        
+        if (!tokenClient) initGoogleAuth();
         if (!accessToken) {
             tokenClient?.requestAccessToken({ prompt: 'consent' });
         } else {
@@ -166,7 +143,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const syncStatusText = document.getElementById('attachmentIndicator');
             if (syncStatusText) syncStatusText.textContent = "Syncing to Cloud...";
 
-            const dbDump = await TreasuryStorage.getDatabase();
+            const dbDump = await TreasuryStorage.getDatabase(sessionPin);
             const fileContent = JSON.stringify(dbDump, null, 2);
 
             const searchRes = await fetch(
@@ -214,7 +191,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             console.error('Google Drive Sync Error:', err);
             const syncStatusText = document.getElementById('attachmentIndicator');
             if (syncStatusText) syncStatusText.textContent = "Attach";
-
             await showAppModal({
                 title: "Sync Failed",
                 message: "⚠️ Could not complete Google Drive sync. Please check your internet connection.",
@@ -224,7 +200,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ==========================================
-    // 🔒 PIN LOCK & STARTUP CHECK
+    // 🔒 STRICT STARTUP PIN UNLOCK CHECK
     // ==========================================
     async function checkPinLock() {
         const savedPinToken = await TreasuryStorage.getPin();
@@ -232,55 +208,51 @@ document.addEventListener('DOMContentLoaded', async () => {
         const pinInput = document.getElementById('pinInput');
         const submitPinBtn = document.getElementById('submitPinBtn');
 
-        // IF A PIN EXISTS IN STORAGE: MANDATORY UNLOCK PROMPT
         if (savedPinToken && pinModal) {
             pinModal.classList.remove('hidden');
-            const titleEl = document.getElementById('pinModalTitle');
-            const descEl = document.getElementById('pinModalDesc');
-            if (titleEl) titleEl.textContent = "Unlock Your Treasury";
-            if (descEl) descEl.textContent = "Enter your PIN code to access your vault.";
-            if (submitPinBtn) submitPinBtn.textContent = "Unlock";
+            document.getElementById('pinModalTitle').textContent = "Unlock Your Treasury";
+            document.getElementById('pinModalDesc').textContent = "Enter your PIN code to access your vault.";
+            submitPinBtn.textContent = "Unlock";
 
-            const handleUnlock = async () => {
-                const enteredPin = pinInput ? pinInput.value : '';
-                const isValid = await TreasuryStorage.verifyPin(enteredPin);
+            return new Promise((resolve) => {
+                const handleUnlock = async () => {
+                    const enteredPin = pinInput ? pinInput.value : '';
+                    const isValid = await TreasuryStorage.verifyPin(enteredPin);
 
-                if (isValid) {
-                    cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
-                    cachedSession.pin = enteredPin;
-                    await TreasuryStorage.setActiveSession(cachedSession);
-
-                    pinModal.classList.add('hidden');
-                    if (pinInput) pinInput.value = '';
-                } else {
-                    await showAppModal({
-                        title: "Incorrect PIN",
-                        message: "⚠️ Incorrect PIN. Please try again.",
-                        icon: "⚠️"
-                    });
-                    if (pinInput) pinInput.value = '';
-                }
-            };
-
-            if (submitPinBtn) submitPinBtn.onclick = handleUnlock;
-            if (pinInput) {
-                pinInput.onkeydown = (e) => {
-                    if (e.key === 'Enter') handleUnlock();
+                    if (isValid) {
+                        sessionPin = enteredPin; // Store ONLY in memory
+                        pinModal.classList.add('hidden');
+                        if (pinInput) pinInput.value = '';
+                        resolve();
+                    } else {
+                        await showAppModal({
+                            title: "Incorrect PIN",
+                            message: "⚠️ Incorrect PIN. Please try again.",
+                            icon: "⚠️"
+                        });
+                        if (pinInput) pinInput.value = '';
+                    }
                 };
-            }
+
+                submitPinBtn.onclick = handleUnlock;
+                if (pinInput) {
+                    pinInput.onkeydown = (e) => {
+                        if (e.key === 'Enter') handleUnlock();
+                    };
+                }
+            });
         }
     }
     await checkPinLock();
 
     // ==========================================
-    // 🛡️ PIN SETTINGS & CHANGE MANAGEMENT
+    // 🛡️ STRICT PIN SETTINGS & CHANGE MANAGEMENT
     // ==========================================
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
         const currentPinToken = await TreasuryStorage.getPin();
-        let verifiedOldPin = null;
-
-        // RULE: IF A PIN IS ALREADY SET, DEMAND OLD PIN FIRST
+        
         if (currentPinToken) {
+            // RULE: Must enter current PIN first before any changes
             const enteredCurrent = await showAppModal({
                 title: "Verify Current PIN",
                 message: "Enter your CURRENT PIN to proceed with changes:",
@@ -288,7 +260,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 isPrompt: true,
                 inputPlaceholder: "••••"
             });
-            if (enteredCurrent === null) return; // User cancelled
+            if (enteredCurrent === null) return; // Cancelled
 
             const isCurrentValid = await TreasuryStorage.verifyPin(enteredCurrent);
             if (!isCurrentValid) {
@@ -297,11 +269,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     message: "⚠️ Incorrect current PIN. Action cancelled.",
                     icon: "⚠️"
                 });
-                return;
+                return; // HALT EXECUTION: Wrong PIN blocks all changes
             }
-            verifiedOldPin = enteredCurrent;
 
-            // Ask whether to change or remove existing PIN
             const actionChoice = await showAppModal({
                 title: "PIN Management",
                 message: "Click OK to Change your PIN.\nClick Cancel to Remove PIN protection completely.",
@@ -310,7 +280,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
 
             if (actionChoice) {
-                // Change PIN Flow
                 const newPin = await showAppModal({
                     title: "Set New PIN",
                     message: "Enter a new 4 to 6-digit numerical PIN code:",
@@ -321,11 +290,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (newPin === null) return;
 
                 if (/^\d{4,6}$/.test(newPin)) {
-                    await TreasuryStorage.setPin(newPin, verifiedOldPin);
-                    cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
-                    cachedSession.pin = newPin;
-                    await TreasuryStorage.setActiveSession(cachedSession);
-
+                    await TreasuryStorage.setPin(newPin, enteredCurrent);
+                    sessionPin = newPin;
                     await showAppModal({
                         title: "Success",
                         message: "✨ PIN updated successfully and vault encrypted!",
@@ -339,7 +305,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     });
                 }
             } else {
-                // Remove PIN Flow
                 const confirmRemoval = await showAppModal({
                     title: "Remove PIN Protection",
                     message: "⚠️ Are you sure you want to completely remove PIN protection?",
@@ -347,13 +312,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     isConfirm: true
                 });
                 if (confirmRemoval) {
-                    await TreasuryStorage.removePin(verifiedOldPin);
-                    cachedSession = await TreasuryStorage.getActiveSession();
-                    if (cachedSession) {
-                        delete cachedSession.pin;
-                        await TreasuryStorage.setActiveSession(cachedSession);
-                    }
-
+                    await TreasuryStorage.removePin(enteredCurrent);
+                    sessionPin = null;
                     await showAppModal({
                         title: "Protection Removed",
                         message: "🔒 PIN protection removed successfully.",
@@ -362,7 +322,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
         } else {
-            // RULE: IF NO PIN IS SET, SET ONE UP DIRECTLY
+            // RULE: If no PIN is set, allow setting one directly without old PIN check
             const newPin = await showAppModal({
                 title: "Set New PIN",
                 message: "Enter a 4 to 6-digit numerical PIN code to protect your vault:",
@@ -374,10 +334,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (/^\d{4,6}$/.test(newPin)) {
                 await TreasuryStorage.setPin(newPin);
-                cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
-                cachedSession.pin = newPin;
-                await TreasuryStorage.setActiveSession(cachedSession);
-
+                sessionPin = newPin;
                 await showAppModal({
                     title: "Success",
                     message: "✨ PIN created successfully and vault encrypted!",
@@ -393,7 +350,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Countdown Session Logic
+    // Session & Countdown
     async function initSession() {
         cachedSession = await TreasuryStorage.getActiveSession();
         if (!cachedSession) {
@@ -427,14 +384,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             selectedDurationHours = parseInt(e.target.dataset.duration);
             
             const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-            const currentPin = cachedSession ? cachedSession.pin : null;
-            cachedSession = { targetTime, duration: selectedDurationHours, pin: currentPin };
+            cachedSession = { targetTime, duration: selectedDurationHours };
             await TreasuryStorage.setActiveSession(cachedSession);
             updateCountdownDisplay();
         });
     });
 
-    // Heart Counter & Particle Spawn
+    // Heart Counter & Particles
     tapHeartBtn?.addEventListener('click', (e) => {
         currentHeartCount++;
         if (heartCountBadge) heartCountBadge.textContent = `${currentHeartCount} ${currentHeartCount === 1 ? 'Heart' : 'Hearts'}`;
@@ -483,7 +439,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             attachment: MediaController.pendingAttachment
         };
 
-        await TreasuryStorage.saveDayEntry(dateKey, sessionPayload);
+        await TreasuryStorage.saveDayEntry(dateKey, sessionPayload, sessionPin);
 
         await showAppModal({
             title: "Treasury Saved",
@@ -498,9 +454,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (indicator) indicator.textContent = "Attach";
     });
 
-    // Attachment Modal Handlers
+    // Attachment & Calendar Modals
     const attachmentModal = document.getElementById('attachmentModal');
-    
+    const calendarModal = document.getElementById('calendarModal');
+    const timelineModal = document.getElementById('timelineModal');
+
     document.getElementById('openAttachmentModalBtn')?.addEventListener('click', () => {
         attachmentModal?.classList.remove('hidden');
     });
@@ -508,77 +466,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('closeAttachmentModalBtn')?.addEventListener('click', () => {
         attachmentModal?.classList.add('hidden');
     });
-
-    document.getElementById('photoInput')?.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            MediaController.readImageFile(file, (media) => {
-                setMediaPreview(media);
-            });
-        }
-    });
-
-    document.getElementById('startRecorderBtn')?.addEventListener('click', () => {
-        const cameraBox = document.getElementById('cameraViewportContainer');
-        const videoElem = document.getElementById('cameraPreview');
-        const progressElem = document.getElementById('recordProgress');
-        
-        cameraBox?.classList.remove('hidden');
-        
-        MediaController.startThreeSecondRecording(videoElem, progressElem, (media) => {
-            cameraBox?.classList.add('hidden');
-            setMediaPreview(media);
-        });
-    });
-
-    function setMediaPreview(media) {
-        const previewBox = document.getElementById('mediaPreviewBox');
-        const previewContent = document.getElementById('previewContent');
-        if (!previewBox || !previewContent) return;
-
-        previewBox.classList.remove('hidden');
-        previewContent.innerHTML = '';
-
-        if (media.type === 'photo') {
-            const img = document.createElement('img');
-            img.src = media.dataUrl;
-            img.className = 'w-full h-32 object-cover rounded-md';
-            previewContent.appendChild(img);
-        } else {
-            const video = document.createElement('video');
-            video.src = media.dataUrl;
-            video.controls = true;
-            video.className = 'w-full h-32 object-cover rounded-md';
-            previewContent.appendChild(video);
-        }
-
-        MediaController.activeMedia = media;
-    }
-
-    document.getElementById('clearMediaBtn')?.addEventListener('click', () => {
-        MediaController.activeMedia = null;
-        document.getElementById('mediaPreviewBox')?.classList.add('hidden');
-    });
-
-    document.getElementById('confirmAttachmentBtn')?.addEventListener('click', () => {
-        const noteInput = document.getElementById('heartNoteInput');
-        const noteText = noteInput ? noteInput.value.trim() : '';
-        
-        MediaController.pendingAttachment = {
-            note: noteText,
-            media: MediaController.activeMedia
-        };
-
-        const indicator = document.getElementById('attachmentIndicator');
-        if (indicator) {
-            indicator.textContent = (noteText || MediaController.activeMedia) ? "Attached ✓" : "Attach";
-        }
-        attachmentModal?.classList.add('hidden');
-    });
-
-    // Calendar & Timeline Handlers
-    const calendarModal = document.getElementById('calendarModal');
-    const timelineModal = document.getElementById('timelineModal');
 
     document.getElementById('openCalendarBtn')?.addEventListener('click', async () => {
         calendarModal?.classList.remove('hidden');
@@ -610,7 +497,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const firstDayIndex = new Date(year, month, 1).getDay();
         const totalDays = new Date(year, month + 1, 0).getDate();
-        const allEntries = await TreasuryStorage.getAllEntries();
+        const allEntries = await TreasuryStorage.getAllEntries(sessionPin);
 
         ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach(d => {
             const headerCell = document.createElement('div');
@@ -636,7 +523,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (allEntries[dateKey]) {
                 cell.classList.add('has-data');
-                const count = allEntries[dateKey].hearts || 0;
+                const count = allEntries[dateKey].totalHearts || allEntries[dateKey].hearts || 0;
                 const badge = document.createElement('span');
                 badge.className = 'text-[9px] text-rose-300 font-semibold mt-0.5';
                 badge.textContent = `${count}♥`;
@@ -651,7 +538,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 if (titleEl) titleEl.textContent = dateKey;
                 const entry = allEntries[dateKey];
-                const hearts = entry ? (entry.hearts || 0) : 0;
+                const hearts = entry ? (entry.totalHearts || entry.hearts || 0) : 0;
                 if (countEl) countEl.textContent = `Total hearts: ${hearts}`;
 
                 if (entry && (entry.attachment || hearts > 0)) {
@@ -668,7 +555,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.getElementById('viewMemoriesBtn')?.addEventListener('click', async () => {
         if (!currentSelectedDateKey) return;
-        const allEntries = await TreasuryStorage.getAllEntries();
+        const allEntries = await TreasuryStorage.getAllEntries(sessionPin);
         const entry = allEntries[currentSelectedDateKey];
         if (!entry) return;
 
@@ -681,34 +568,36 @@ document.addEventListener('DOMContentLoaded', async () => {
             const card = document.createElement('div');
             card.className = 'bg-slate-800/80 p-4 rounded-xl border border-slate-700 space-y-2';
             
+            const heartsCount = entry.totalHearts || entry.hearts || 0;
             card.innerHTML = `
                 <div class="flex justify-between items-center text-xs text-rose-400 font-semibold">
-                    <span>❤️ ${entry.hearts || 0} Hearts Collected</span>
+                    <span>❤️ ${heartsCount} Hearts Collected</span>
                 </div>
             `;
 
-            if (entry.attachment) {
-                if (entry.attachment.note) {
-                    const p = document.createElement('p');
-                    p.className = 'text-xs text-slate-200 mt-1 italic';
-                    p.textContent = `"${entry.attachment.note}"`;
-                    card.appendChild(p);
-                }
-                if (entry.attachment.media) {
-                    const m = entry.attachment.media;
-                    if (m.type === 'photo' && m.dataUrl) {
-                        const img = document.createElement('img');
-                        img.src = m.dataUrl;
-                        img.className = 'w-full h-36 object-cover rounded-lg mt-2';
-                        card.appendChild(img);
-                    } else if (m.type === 'video' && m.dataUrl) {
-                        const vid = document.createElement('video');
-                        vid.src = m.dataUrl;
-                        vid.controls = true;
-                        vid.className = 'w-full h-36 object-cover rounded-lg mt-2';
-                        card.appendChild(vid);
+            if (entry.entries && Array.isArray(entry.entries)) {
+                entry.entries.forEach(sub => {
+                    if (sub.note) {
+                        const p = document.createElement('p');
+                        p.className = 'text-xs text-slate-200 mt-1 italic';
+                        p.textContent = `"${sub.note}"`;
+                        card.appendChild(p);
                     }
-                }
+                    if (sub.media && sub.media.dataUrl) {
+                        if (sub.media.type === 'photo') {
+                            const img = document.createElement('img');
+                            img.src = sub.media.dataUrl;
+                            img.className = 'w-full h-36 object-cover rounded-lg mt-2';
+                            card.appendChild(img);
+                        } else if (sub.media.type === 'video') {
+                            const vid = document.createElement('video');
+                            vid.src = sub.media.dataUrl;
+                            vid.controls = true;
+                            vid.className = 'w-full h-36 object-cover rounded-lg mt-2';
+                            card.appendChild(vid);
+                        }
+                    }
+                });
             }
             timelineList.appendChild(card);
         }
@@ -719,49 +608,36 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Export & Import Handlers
     document.getElementById('exportBtn')?.addEventListener('click', async () => {
-        const dbDump = await TreasuryStorage.getDatabase();
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dbDump, null, 2));
-        const downloadAnchor = document.createElement('a');
-        downloadAnchor.setAttribute("href", dataStr);
-        downloadAnchor.setAttribute("download", `my-heart-treasury-backup-${getTodayLocalDate()}.json`);
-        document.body.appendChild(downloadAnchor);
-        downloadAnchor.click();
-        downloadAnchor.remove();
+        await TreasuryStorage.exportData(sessionPin);
     });
 
     document.getElementById('importFileInput')?.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            try {
-                const importedData = JSON.parse(event.target.result);
-                await TreasuryStorage.restoreDatabase(importedData);
+        TreasuryStorage.importData(file, sessionPin, async (success) => {
+            if (success) {
                 await showAppModal({
                     title: "Import Successful",
                     message: "✨ Your treasury backup has been successfully restored!",
                     icon: "📂"
                 });
                 location.reload();
-            } catch (err) {
-                console.error('Import error:', err);
+            } else {
                 await showAppModal({
                     title: "Import Failed",
                     message: "⚠️ The backup file is invalid or corrupted.",
                     icon: "⚠️"
                 });
             }
-        };
-        reader.readAsText(file);
+        });
     });
 
-    // Sound Toggle Handler (Safely Re-creates Lucide Icon Element)
+    // Sound Toggle Handler
     let soundEnabled = true;
     document.getElementById('soundToggleBtn')?.addEventListener('click', () => {
         soundEnabled = !soundEnabled;
         AudioController.setEnabled(soundEnabled);
-        
         const soundBtn = document.getElementById('soundToggleBtn');
         if (soundBtn) {
             soundBtn.innerHTML = `<i data-lucide="${soundEnabled ? 'volume-2' : 'volume-x'}" id="soundIcon"></i>`;
