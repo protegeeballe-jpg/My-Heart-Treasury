@@ -532,4 +532,208 @@ document.addEventListener('DOMContentLoaded', () => {
         const noteInput = document.getElementById('heartNoteInput');
         const noteText = noteInput ? noteInput.value.trim() : '';
         
-        MediaController.pendingAttachment
+        MediaController.pendingAttachment = {
+            note: noteText,
+            media: MediaController.activeMedia
+        };
+
+        const indicator = document.getElementById('attachmentIndicator');
+        if (indicator) {
+            indicator.textContent = (noteText || MediaController.activeMedia) ? "Attached ✓" : "Attach";
+        }
+        attachmentModal?.classList.add('hidden');
+    });
+
+    // Calendar Modal Handlers
+    const calendarModal = document.getElementById('calendarModal');
+    const timelineModal = document.getElementById('timelineModal');
+
+    document.getElementById('openCalendarBtn')?.addEventListener('click', async () => {
+        calendarModal?.classList.remove('hidden');
+        await renderCalendar();
+    });
+
+    document.getElementById('closeCalendarModalBtn')?.addEventListener('click', () => {
+        calendarModal?.classList.add('hidden');
+    });
+
+    document.getElementById('closeTimelineModalBtn')?.addEventListener('click', () => {
+        timelineModal?.classList.add('hidden');
+    });
+
+    async function renderCalendar() {
+        const grid = document.getElementById('calendarGrid');
+        const monthLabel = document.getElementById('calendarMonthLabel');
+        if (!grid) return;
+
+        grid.innerHTML = '';
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth();
+
+        if (monthLabel) {
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            monthLabel.textContent = `${monthNames[month]} ${year} Treasury`;
+        }
+
+        const firstDayIndex = new Date(year, month, 1).getDay();
+        const totalDays = new Date(year, month + 1, 0).getDate();
+        const allEntries = await TreasuryStorage.getAllEntries();
+
+        // Day headers
+        ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach(d => {
+            const headerCell = document.createElement('div');
+            headerCell.className = 'text-center text-[10px] text-slate-500 font-bold py-1';
+            headerCell.textContent = d;
+            grid.appendChild(headerCell);
+        });
+
+        // Blank cells for start offset
+        for (let i = 0; i < firstDayIndex; i++) {
+            const emptyCell = document.createElement('div');
+            emptyCell.className = 'calendar-day-cell opacity-20 pointer-events-none';
+            grid.appendChild(emptyCell);
+        }
+
+        for (let day = 1; day <= totalDays; day++) {
+            const cell = document.createElement('div');
+            cell.className = 'calendar-day-cell';
+            const dayStr = String(day).padStart(2, '0');
+            const monthStr = String(month + 1).padStart(2, '0');
+            const dateKey = `${year}-${monthStr}-${dayStr}`;
+
+            cell.innerHTML = `<span class="font-bold">${day}</span>`;
+
+            if (allEntries[dateKey]) {
+                cell.classList.add('has-data');
+                const count = allEntries[dateKey].hearts || 0;
+                const badge = document.createElement('span');
+                badge.className = 'text-[9px] text-rose-300 font-semibold mt-0.5';
+                badge.textContent = `${count}♥`;
+                cell.appendChild(badge);
+            }
+
+            cell.addEventListener('click', () => {
+                currentSelectedDateKey = dateKey;
+                const titleEl = document.getElementById('selectedDateTitle');
+                const countEl = document.getElementById('selectedDateHeartsCount');
+                const viewBtn = document.getElementById('viewMemoriesBtn');
+
+                if (titleEl) titleEl.textContent = dateKey;
+                const entry = allEntries[dateKey];
+                const hearts = entry ? (entry.hearts || 0) : 0;
+                if (countEl) countEl.textContent = `Total hearts: ${hearts}`;
+
+                if (entry && (entry.attachment || hearts > 0)) {
+                    viewBtn?.classList.remove('hidden');
+                } else {
+                    viewBtn?.classList.add('hidden');
+                }
+            });
+
+            grid.appendChild(cell);
+        }
+    }
+
+    document.getElementById('viewMemoriesBtn')?.addEventListener('click', async () => {
+        if (!currentSelectedDateKey) return;
+        const allEntries = await TreasuryStorage.getAllEntries();
+        const entry = allEntries[currentSelectedDateKey];
+        if (!entry) return;
+
+        const timelineList = document.getElementById('timelineList');
+        const timelineTitle = document.getElementById('timelineModalTitle');
+        if (timelineTitle) timelineTitle.textContent = `Memories for ${currentSelectedDateKey}`;
+        if (timelineList) {
+            timelineList.innerHTML = '';
+            
+            const card = document.createElement('div');
+            card.className = 'bg-slate-800/80 p-4 rounded-xl border border-slate-700 space-y-2';
+            
+            card.innerHTML = `
+                <div class="flex justify-between items-center text-xs text-rose-400 font-semibold">
+                    <span>❤️ ${entry.hearts || 0} Hearts Collected</span>
+                </div>
+            `;
+
+            if (entry.attachment) {
+                if (entry.attachment.note) {
+                    const p = document.createElement('p');
+                    p.className = 'text-xs text-slate-200 mt-1 italic';
+                    p.textContent = `"${entry.attachment.note}"`;
+                    card.appendChild(p);
+                }
+                if (entry.attachment.media) {
+                    const m = entry.attachment.media;
+                    if (m.type === 'photo' && m.dataUrl) {
+                        const img = document.createElement('img');
+                        img.src = m.dataUrl;
+                        img.className = 'w-full h-36 object-cover rounded-lg mt-2';
+                        card.appendChild(img);
+                    } else if (m.type === 'video' && m.dataUrl) {
+                        const vid = document.createElement('video');
+                        vid.src = m.dataUrl;
+                        vid.controls = true;
+                        vid.className = 'w-full h-36 object-cover rounded-lg mt-2';
+                        card.appendChild(vid);
+                    }
+                }
+            }
+            timelineList.appendChild(card);
+        }
+
+        timelineModal?.classList.remove('hidden');
+    });
+
+    // Export & Import Handlers
+    document.getElementById('exportBtn')?.addEventListener('click', async () => {
+        const dbDump = await TreasuryStorage.getDatabase();
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dbDump, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `my-heart-treasury-backup-${getTodayLocalDate()}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+    });
+
+    document.getElementById('importFileInput')?.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const importedData = JSON.parse(event.target.result);
+                await TreasuryStorage.restoreDatabase(importedData);
+                await showAppModal({
+                    title: "Import Successful",
+                    message: "✨ Your treasury backup has been successfully restored!",
+                    icon: "📂"
+                });
+                location.reload();
+            } catch (err) {
+                console.error('Import error:', err);
+                await showAppModal({
+                    title: "Import Failed",
+                    message: "⚠️ The backup file is invalid or corrupted.",
+                    icon: "⚠️"
+                });
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    // Sound Toggle Handler
+    let soundEnabled = true;
+    document.getElementById('soundToggleBtn')?.addEventListener('click', () => {
+        soundEnabled = !soundEnabled;
+        AudioController.setEnabled(soundEnabled);
+        const icon = document.getElementById('soundIcon');
+        if (icon) {
+            icon.setAttribute('data-lucide', soundEnabled ? 'volume-2' : 'volume-x');
+            lucide.createIcons();
+        }
+    });
+
+});
