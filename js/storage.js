@@ -130,8 +130,8 @@ const TreasuryStorage = {
         }
     },
 
-    // HARDENED: Throws error instead of silently returning empty object
-    async getDatabase() {
+    // HARDENED: Throws error instead of silently returning empty object, supports override PIN
+    async getDatabase(overridePin = null) {
         try {
             const rawData = await this.get('treasury_db');
             if (!rawData) return {};
@@ -140,12 +140,19 @@ const TreasuryStorage = {
                 return rawData;
             }
 
-            const activeSession = await this.getActiveSession();
-            if (!activeSession || !activeSession.pin) {
+            let pinToUse = overridePin;
+            if (!pinToUse) {
+                const activeSession = await this.getActiveSession();
+                if (activeSession && activeSession.pin) {
+                    pinToUse = activeSession.pin;
+                }
+            }
+
+            if (!pinToUse) {
                 throw new Error("Vault is locked. Active session PIN required to read database.");
             }
 
-            return await this._decrypt(activeSession.pin, rawData);
+            return await this._decrypt(pinToUse, rawData);
         } catch (err) {
             console.error('Failed to get or decrypt database:', err);
             throw err;
@@ -186,7 +193,7 @@ const TreasuryStorage = {
         }
     },
 
-    // HARDENED: Requires old PIN verification before changing/updating
+    // HARDENED: Requires old PIN verification and uses override PIN for decryption
     async setPin(pin, oldPin = null) {
         try {
             const existingPinToken = await this.getPin();
@@ -203,7 +210,7 @@ const TreasuryStorage = {
             const validationCanary = await this._encrypt(pin, { status: "VALID_PIN" });
             await this.set('my_heart_treasury_pin_v1', validationCanary);
 
-            let db = await this.getDatabase();
+            let db = await this.getDatabase(oldPin);
             if (db && Object.keys(db).length > 0) {
                 const encryptedDb = await this._encrypt(pin, db);
                 await this.set('treasury_db', encryptedDb);
@@ -225,7 +232,7 @@ const TreasuryStorage = {
         }
     },
 
-    // HARDENED: Requires current PIN verification before removing security
+    // HARDENED: Requires current PIN verification and uses override PIN for decryption
     async removePin(currentPin) {
         try {
             const isValid = await this.verifyPin(currentPin);
@@ -233,7 +240,7 @@ const TreasuryStorage = {
                 throw new Error("Incorrect PIN. Cannot remove security protection.");
             }
 
-            let db = await this.getDatabase();
+            let db = await this.getDatabase(currentPin);
             await this.set('treasury_db', db);
             await this.del('my_heart_treasury_pin_v1');
         } catch (err) {

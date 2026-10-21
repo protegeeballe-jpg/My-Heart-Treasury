@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>My Heart Treasury</title>
     
-    <!-- Hardened Content Security Policy with Tailwind CDN Allowed -->
+    <!-- Localized Content Security Policy (Zero Third-Party CDN Dependencies) -->
     <meta http-equiv="Content-Security-Policy" content="
         default-src 'self';
-        script-src 'self' https://accounts.google.com https://cdn.tailwindcss.com;
+        script-src 'self' https://accounts.google.com;
         style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
         font-src 'self' https://fonts.gstatic.com;
-        connect-src 'self' https://accounts.google.com https://www.googleapis.com https://cdn.tailwindcss.com;
+        connect-src 'self' https://accounts.google.com https://www.googleapis.com;
         frame-src 'self' https://accounts.google.com;
         img-src 'self' data: blob: https://*.googleusercontent.com;
         object-src 'none';
@@ -36,8 +36,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
 
-    <!-- Tailwind CSS Official CDN & Local Icons -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Local Tailwind Engine & Local Icons -->
+    <script src="js/tailwind.js"></script>
     <script src="js/lucide.js" defer></script>
 </head>
 <body class="treasury-body h-screen overflow-hidden flex flex-col justify-between p-4 pt-8">
@@ -229,27 +229,3 @@
                 <button id="viewMemoriesBtn" class="btn-secondary hidden">
                     <i data-lucide="eye" class="w-4 h-4 text-rose-400"></i>
                     <span>View Day's Memories</span>
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Timeline & Media Memories Modal -->
-    <div id="timelineModal" class="modal-backdrop hidden">
-        <div class="modal-card max-w-lg">
-            <div class="modal-header">
-                <h3 id="timelineModalTitle">Memories for Today</h3>
-                <button id="closeTimelineModalBtn" class="modal-close-btn">&times;</button>
-            </div>
-
-            <div id="timelineList" class="timeline-scroll-container"></div>
-        </div>
-    </div>
-
-    <!-- Modular Scripts -->
-    <script src="js/storage.js"></script>
-    <script src="js/audio.js"></script>
-    <script src="js/media.js"></script>
-    <script src="js/app.js"></script>
-</body>
-</html>

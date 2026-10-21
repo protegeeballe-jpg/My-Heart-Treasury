@@ -16,6 +16,11 @@ body.treasury-body {
     overflow: hidden;
     margin: 0;
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+button, label {
+    touch-action: manipulation;
 }
 
 .header-container {
@@ -283,6 +288,8 @@ body.treasury-body {
     font-size: 1.5rem;
     line-height: 1;
     cursor: pointer;
+    background: transparent;
+    border: none;
 }
 
 .btn-media-choice {
@@ -377,6 +384,17 @@ body.treasury-body {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    scrollbar-width: thin;
+    scrollbar-color: #334155 transparent;
+}
+
+.timeline-scroll-container::-webkit-scrollbar {
+    width: 6px;
+}
+
+.timeline-scroll-container::-webkit-scrollbar-thumb {
+    background-color: #334155;
+    border-radius: 3px;
 }
 
 .particle-layer {
