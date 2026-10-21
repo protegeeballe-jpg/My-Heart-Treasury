@@ -8,7 +8,6 @@ const TreasuryStorage = {
     dbInstance: null,
     initPromise: null,
 
-    // Promise Singleton: Opens IndexedDB once cleanly and resolves all callers safely
     async init() {
         if (this.dbInstance) return this.dbInstance;
         if (this.initPromise) return this.initPromise;
@@ -135,7 +134,6 @@ const TreasuryStorage = {
             await this.init();
             return await this.get('active_session') || null;
         } catch (err) {
-            console.error('Failed to get active session:', err);
             return null;
         }
     },
@@ -159,33 +157,25 @@ const TreasuryStorage = {
                 return rawData;
             }
 
-            let pinToUse = overridePin;
-            if (!pinToUse) {
-                const activeSession = await this.getActiveSession();
-                if (activeSession && activeSession.pin) {
-                    pinToUse = activeSession.pin;
-                }
+            if (!overridePin) {
+                throw new Error("Vault is locked. Valid PIN required to read database.");
             }
 
-            if (!pinToUse) {
-                throw new Error("Vault is locked. Active session PIN required to read database.");
-            }
-
-            return await this._decrypt(pinToUse, rawData);
+            return await this._decrypt(overridePin, rawData);
         } catch (err) {
             console.error('Failed to get or decrypt database:', err);
             throw err;
         }
     },
 
-    async getAllEntries() {
-        return await this.getDatabase();
+    async getAllEntries(sessionPin) {
+        return await this.getDatabase(sessionPin);
     },
 
-    async saveDayEntry(dateKey, payload) {
+    async saveDayEntry(dateKey, payload, sessionPin) {
         try {
             await this.init();
-            let db = await this.getDatabase();
+            let db = await this.getDatabase(sessionPin);
             if (!db[dateKey]) {
                 db[dateKey] = { totalHearts: 0, entries: [] };
             }
@@ -197,9 +187,10 @@ const TreasuryStorage = {
                 media: payload.attachment ? payload.attachment.media : null
             });
 
-            const activeSession = await this.getActiveSession();
-            if (activeSession && activeSession.pin) {
-                const encryptedPayload = await this._encrypt(activeSession.pin, db);
+            const pinCheck = await this.getPin();
+            if (pinCheck) {
+                if (!sessionPin) throw new Error("PIN required to encrypt vault.");
+                const encryptedPayload = await this._encrypt(sessionPin, db);
                 await this.set('treasury_db', encryptedPayload);
             } else {
                 await this.set('treasury_db', db);
@@ -275,20 +266,21 @@ const TreasuryStorage = {
         }
     },
 
-    async restoreDatabase(importedData) {
+    async restoreDatabase(importedData, sessionPin) {
         await this.init();
-        const activeSession = await this.getActiveSession();
-        if (activeSession && activeSession.pin) {
-            const encryptedPayload = await this._encrypt(activeSession.pin, importedData);
+        const pinCheck = await this.getPin();
+        if (pinCheck) {
+            if (!sessionPin) throw new Error("PIN required to encrypt imported database.");
+            const encryptedPayload = await this._encrypt(sessionPin, importedData);
             await this.set('treasury_db', encryptedPayload);
         } else {
             await this.set('treasury_db', importedData);
         }
     },
 
-    async exportData() {
+    async exportData(sessionPin) {
         try {
-            const db = await this.getDatabase();
+            const db = await this.getDatabase(sessionPin);
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db, null, 2));
             const downloadAnchor = document.createElement('a');
             downloadAnchor.setAttribute("href", dataStr);
@@ -301,12 +293,12 @@ const TreasuryStorage = {
         }
     },
 
-    async importData(file, callback) {
+    async importData(file, sessionPin, callback) {
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
                 const importedData = JSON.parse(event.target.result);
-                await this.restoreDatabase(importedData);
+                await this.restoreDatabase(importedData, sessionPin);
                 callback(true);
             } catch (e) {
                 console.error("Import parse error:", e);
