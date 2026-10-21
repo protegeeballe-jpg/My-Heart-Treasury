@@ -130,26 +130,25 @@ const TreasuryStorage = {
         }
     },
 
+    // HARDENED: Throws error instead of silently returning empty object
     async getDatabase() {
         try {
             const rawData = await this.get('treasury_db');
             if (!rawData) return {};
 
-            // Backward Compatibility: If data is stored in plain text (legacy), return it directly
             if (!rawData.encrypted) {
                 return rawData;
             }
 
-            // If encrypted, we require the active session PIN to decrypt it
             const activeSession = await this.getActiveSession();
             if (!activeSession || !activeSession.pin) {
-                return {}; // Locked until PIN is provided
+                throw new Error("Vault is locked. Active session PIN required to read database.");
             }
 
             return await this._decrypt(activeSession.pin, rawData);
         } catch (err) {
             console.error('Failed to get or decrypt database:', err);
-            return {};
+            throw err;
         }
     },
 
@@ -167,7 +166,6 @@ const TreasuryStorage = {
                 media: payload.attachment ? payload.attachment.media : null
             });
 
-            // Check if PIN protection is active, encrypt before saving
             const activeSession = await this.getActiveSession();
             if (activeSession && activeSession.pin) {
                 const encryptedPayload = await this._encrypt(activeSession.pin, db);
@@ -182,27 +180,37 @@ const TreasuryStorage = {
 
     async getPin() {
         try {
-            // Returns the encrypted verification token object
             return await this.get('my_heart_treasury_pin_v1') || null;
         } catch (err) {
             return null;
         }
     },
 
-    async setPin(pin) {
+    // HARDENED: Requires old PIN verification before changing/updating
+    async setPin(pin, oldPin = null) {
         try {
-            // Securely store an encrypted validation canary instead of the raw PIN
+            const existingPinToken = await this.getPin();
+            if (existingPinToken) {
+                if (!oldPin) {
+                    throw new Error("Current PIN is required to change or update your PIN.");
+                }
+                const isValid = await this.verifyPin(oldPin);
+                if (!isValid) {
+                    throw new Error("Incorrect current PIN provided.");
+                }
+            }
+
             const validationCanary = await this._encrypt(pin, { status: "VALID_PIN" });
             await this.set('my_heart_treasury_pin_v1', validationCanary);
 
-            // Also encrypt existing database immediately with the new PIN
             let db = await this.getDatabase();
-            if (db && Object.keys(db).length > 0 && !db.encrypted) {
+            if (db && Object.keys(db).length > 0) {
                 const encryptedDb = await this._encrypt(pin, db);
                 await this.set('treasury_db', encryptedDb);
             }
         } catch (err) {
             console.error('Failed to save PIN:', err);
+            throw err;
         }
     },
 
@@ -217,17 +225,20 @@ const TreasuryStorage = {
         }
     },
 
-    async removePin() {
+    // HARDENED: Requires current PIN verification before removing security
+    async removePin(currentPin) {
         try {
-            // Decrypt database to plain text before removing PIN lockdown
-            const activeSession = await this.getActiveSession();
-            if (activeSession && activeSession.pin) {
-                let db = await this.getDatabase();
-                await this.set('treasury_db', db);
+            const isValid = await this.verifyPin(currentPin);
+            if (!isValid) {
+                throw new Error("Incorrect PIN. Cannot remove security protection.");
             }
+
+            let db = await this.getDatabase();
+            await this.set('treasury_db', db);
             await this.del('my_heart_treasury_pin_v1');
         } catch (err) {
             console.error('Failed to remove PIN:', err);
+            throw err;
         }
     },
 
@@ -252,7 +263,6 @@ const TreasuryStorage = {
             try {
                 const importedData = JSON.parse(event.target.result);
                 
-                // If a PIN is active, encrypt the imported backup automatically
                 const activeSession = await this.getActiveSession();
                 if (activeSession && activeSession.pin) {
                     const encryptedPayload = await this._encrypt(activeSession.pin, importedData);
