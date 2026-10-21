@@ -1,7 +1,7 @@
 
 Copyright (c) 2026 protegeeballe-jpg. All rights reserved.
 
-1. PERMISSION: You may view, download, and modify this software solely for personal, non-commercial use.
+1. PERMISSION: You may view, download this software solely for personal, non-commercial use.
 2. COMMERCIAL RESTRICTION: You may NOT sell, sub-license, rent, or monetize this software or any modified versions of it.
 3. OWNERSHIP: Sole ownership and copyright of the original software remain exclusively with the author.
 
