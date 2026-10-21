@@ -271,9 +271,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     checkPinLock();
 
-    // PIN Setup & Change Listener (Upgraded for Cryptographic Vault Management)
+    // PIN Setup & Change Listener (Upgraded for Cryptographic Vault Management & Old PIN Verification)
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
         const currentPinToken = await TreasuryStorage.getPin();
+        let verifiedOldPin = null;
         
         if (currentPinToken) {
             const enteredCurrent = await showAppModal({
@@ -294,6 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 return;
             }
+            verifiedOldPin = enteredCurrent;
         }
 
         const actionChoice = await showAppModal({
@@ -314,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (newPin === null) return; // Cancelled
 
             if (/^\d{4,6}$/.test(newPin)) {
-                await TreasuryStorage.setPin(newPin);
+                await TreasuryStorage.setPin(newPin, verifiedOldPin);
                 
                 // Update active session PIN
                 cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
@@ -341,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 isConfirm: true
             });
             if (confirmRemoval) {
-                await TreasuryStorage.removePin();
+                await TreasuryStorage.removePin(verifiedOldPin);
                 
                 // Clear pin from active session
                 cachedSession = await TreasuryStorage.getActiveSession();
