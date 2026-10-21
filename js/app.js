@@ -1,8 +1,8 @@
 /**
  * Main Application Orchestrator for My Heart Treasury.
  */
-document.addEventListener('DOMContentLoaded', () => {
-    // Initialize icons
+document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize icons on initial load
     lucide.createIcons();
 
     // Register Service Worker for Offline PWA Support
@@ -225,53 +225,63 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // PIN Lock Check on App Startup (Upgraded for AES-GCM Cryptographic Verification)
+    // PIN Lock Check on App Startup (Upgraded with robust storage initialization)
     async function checkPinLock() {
-        const savedPinToken = await TreasuryStorage.getPin();
-        const pinModal = document.getElementById('pinLockModal');
-        const pinInput = document.getElementById('pinInput');
-        const submitPinBtn = document.getElementById('submitPinBtn');
+        try {
+            if (typeof TreasuryStorage.init === 'function') {
+                await TreasuryStorage.init();
+            }
+            const savedPinToken = await TreasuryStorage.getPin();
+            const pinModal = document.getElementById('pinLockModal');
+            const pinInput = document.getElementById('pinInput');
+            const submitPinBtn = document.getElementById('submitPinBtn');
 
-        if (savedPinToken && pinModal) {
-            pinModal.classList.remove('hidden');
-            document.getElementById('pinModalTitle').textContent = "Unlock Your Treasury";
-            document.getElementById('pinModalDesc').textContent = "Enter your PIN code to access your vault.";
-            submitPinBtn.textContent = "Unlock";
+            if (savedPinToken && pinModal) {
+                pinModal.classList.remove('hidden');
+                const pinTitle = document.getElementById('pinModalTitle');
+                const pinDesc = document.getElementById('pinModalDesc');
+                if (pinTitle) pinTitle.textContent = "Unlock Your Treasury";
+                if (pinDesc) pinDesc.textContent = "Enter your PIN code to access your vault.";
+                if (submitPinBtn) submitPinBtn.textContent = "Unlock";
 
-            const handleUnlock = async () => {
-                const enteredPin = pinInput.value;
-                const isValid = await TreasuryStorage.verifyPin(enteredPin);
+                const handleUnlock = async () => {
+                    const enteredPin = pinInput ? pinInput.value : '';
+                    const isValid = await TreasuryStorage.verifyPin(enteredPin);
 
-                if (isValid) {
-                    // Save PIN to active session so storage.js can decrypt the vault
-                    cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
-                    cachedSession.pin = enteredPin;
-                    await TreasuryStorage.setActiveSession(cachedSession);
+                    if (isValid) {
+                        cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
+                        cachedSession.pin = enteredPin;
+                        await TreasuryStorage.setActiveSession(cachedSession);
 
-                    pinModal.classList.add('hidden');
-                    pinInput.value = '';
-                } else {
-                    await showAppModal({
-                        title: "Incorrect PIN",
-                        message: "⚠️ Incorrect PIN. Please try again.",
-                        icon: "⚠️"
-                    });
-                    pinInput.value = '';
+                        pinModal.classList.add('hidden');
+                        if (pinInput) pinInput.value = '';
+                    } else {
+                        await showAppModal({
+                            title: "Incorrect PIN",
+                            message: "⚠️ Incorrect PIN. Please try again.",
+                            icon: "⚠️"
+                        });
+                        if (pinInput) pinInput.value = '';
+                    }
+                };
+
+                if (submitPinBtn) submitPinBtn.onclick = handleUnlock;
+                
+                if (pinInput) {
+                    pinInput.onkeydown = (e) => {
+                        if (e.key === 'Enter') {
+                            handleUnlock();
+                        }
+                    };
                 }
-            };
-
-            submitPinBtn.onclick = handleUnlock;
-            
-            pinInput.onkeydown = (e) => {
-                if (e.key === 'Enter') {
-                    handleUnlock();
-                }
-            };
+            }
+        } catch (err) {
+            console.error('PIN Lock Initialization Error:', err);
         }
     }
-    checkPinLock();
+    await checkPinLock();
 
-    // PIN Setup & Change Listener (Upgraded for Cryptographic Vault Management & Old PIN Verification)
+    // PIN Setup & Change Listener
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
         const currentPinToken = await TreasuryStorage.getPin();
         let verifiedOldPin = null;
@@ -318,7 +328,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (/^\d{4,6}$/.test(newPin)) {
                 await TreasuryStorage.setPin(newPin, verifiedOldPin);
                 
-                // Update active session PIN
                 cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
                 cachedSession.pin = newPin;
                 await TreasuryStorage.setActiveSession(cachedSession);
@@ -345,7 +354,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (confirmRemoval) {
                 await TreasuryStorage.removePin(verifiedOldPin);
                 
-                // Clear pin from active session
                 cachedSession = await TreasuryStorage.getActiveSession();
                 if (cachedSession) {
                     delete cachedSession.pin;
@@ -363,13 +371,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Optimized Countdown Timer
     async function initSession() {
-        cachedSession = await TreasuryStorage.getActiveSession();
-        if (!cachedSession) {
-            const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-            cachedSession = { targetTime, duration: selectedDurationHours };
-            await TreasuryStorage.setActiveSession(cachedSession);
+        try {
+            if (typeof TreasuryStorage.init === 'function') {
+                await TreasuryStorage.init();
+            }
+            cachedSession = await TreasuryStorage.getActiveSession();
+            if (!cachedSession) {
+                const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
+                cachedSession = { targetTime, duration: selectedDurationHours };
+                await TreasuryStorage.setActiveSession(cachedSession);
+            }
+            updateCountdownDisplay();
+        } catch (err) {
+            console.error('Session Init Error:', err);
         }
-        updateCountdownDisplay();
     }
 
     function updateCountdownDisplay() {
@@ -383,7 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sessionCountdown.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
     }
 
-    initSession();
+    await initSession();
     clearInterval(activeTimerInterval);
     activeTimerInterval = setInterval(updateCountdownDisplay, 1000);
 
@@ -633,6 +648,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             grid.appendChild(cell);
         }
+        
+        // Refresh icons if any are used in calendar cells
+        lucide.createIcons();
     }
 
     document.getElementById('viewMemoriesBtn')?.addEventListener('click', async () => {
@@ -683,6 +701,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         timelineModal?.classList.remove('hidden');
+        lucide.createIcons();
     });
 
     // Export & Import Handlers
@@ -724,14 +743,15 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.readAsText(file);
     });
 
-    // Sound Toggle Handler
+    // Sound Toggle Handler (Safely Re-creates Lucide Icon Element)
     let soundEnabled = true;
     document.getElementById('soundToggleBtn')?.addEventListener('click', () => {
         soundEnabled = !soundEnabled;
         AudioController.setEnabled(soundEnabled);
-        const icon = document.getElementById('soundIcon');
-        if (icon) {
-            icon.setAttribute('data-lucide', soundEnabled ? 'volume-2' : 'volume-x');
+        
+        const soundBtn = document.getElementById('soundToggleBtn');
+        if (soundBtn) {
+            soundBtn.innerHTML = `<i data-lucide="${soundEnabled ? 'volume-2' : 'volume-x'}" id="soundIcon"></i>`;
             lucide.createIcons();
         }
     });
