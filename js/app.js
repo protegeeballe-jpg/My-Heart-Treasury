@@ -156,7 +156,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         if (!accessToken) {
-            // Trigger Google OAuth Login popup
             tokenClient?.requestAccessToken({ prompt: 'consent' });
         } else {
             performDriveBackup();
@@ -169,11 +168,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const syncStatusText = document.getElementById('attachmentIndicator');
             if (syncStatusText) syncStatusText.textContent = "Syncing to Cloud...";
 
-            // Fetch all IndexedDB data using storage module
             const dbDump = await TreasuryStorage.getDatabase();
             const fileContent = JSON.stringify(dbDump, null, 2);
 
-            // Check if backup file already exists in drive.appdata
             const searchRes = await fetch(
                 "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='treasury-backup.json'",
                 { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -228,21 +225,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // PIN Lock Check on App Startup
+    // PIN Lock Check on App Startup (Upgraded for AES-GCM Cryptographic Verification)
     async function checkPinLock() {
-        const savedPin = await TreasuryStorage.getPin();
+        const savedPinToken = await TreasuryStorage.getPin();
         const pinModal = document.getElementById('pinLockModal');
         const pinInput = document.getElementById('pinInput');
         const submitPinBtn = document.getElementById('submitPinBtn');
 
-        if (savedPin && pinModal) {
+        if (savedPinToken && pinModal) {
             pinModal.classList.remove('hidden');
             document.getElementById('pinModalTitle').textContent = "Unlock Your Treasury";
             document.getElementById('pinModalDesc').textContent = "Enter your PIN code to access your vault.";
             submitPinBtn.textContent = "Unlock";
 
             const handleUnlock = async () => {
-                if (pinInput.value === savedPin) {
+                const enteredPin = pinInput.value;
+                const isValid = await TreasuryStorage.verifyPin(enteredPin);
+
+                if (isValid) {
+                    // Save PIN to active session so storage.js can decrypt the vault
+                    cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
+                    cachedSession.pin = enteredPin;
+                    await TreasuryStorage.setActiveSession(cachedSession);
+
                     pinModal.classList.add('hidden');
                     pinInput.value = '';
                 } else {
@@ -257,7 +262,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             submitPinBtn.onclick = handleUnlock;
             
-            // Allow Enter key submission on startup PIN input
             pinInput.onkeydown = (e) => {
                 if (e.key === 'Enter') {
                     handleUnlock();
@@ -267,11 +271,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     checkPinLock();
 
-    // PIN Setup & Change Listener (Fully Custom Modal Workflow & Bulletproof Validation)
+    // PIN Setup & Change Listener (Upgraded for Cryptographic Vault Management)
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
-        const currentPin = await TreasuryStorage.getPin();
+        const currentPinToken = await TreasuryStorage.getPin();
         
-        if (currentPin) {
+        if (currentPinToken) {
             const enteredCurrent = await showAppModal({
                 title: "Verify Current PIN",
                 message: "Enter your CURRENT PIN to proceed with changes:",
@@ -281,7 +285,8 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (enteredCurrent === null) return; // Cancelled
             
-            if (enteredCurrent !== currentPin) {
+            const isCurrentValid = await TreasuryStorage.verifyPin(enteredCurrent);
+            if (!isCurrentValid) {
                 await showAppModal({
                     title: "Incorrect PIN",
                     message: "⚠️ Incorrect current PIN. Action cancelled.",
@@ -308,12 +313,17 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (newPin === null) return; // Cancelled
 
-            // Strict Regex validation: exactly 4 to 6 digits
             if (/^\d{4,6}$/.test(newPin)) {
                 await TreasuryStorage.setPin(newPin);
+                
+                // Update active session PIN
+                cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
+                cachedSession.pin = newPin;
+                await TreasuryStorage.setActiveSession(cachedSession);
+
                 await showAppModal({
                     title: "Success",
-                    message: "✨ PIN set successfully!",
+                    message: "✨ PIN set successfully and vault encrypted!",
                     icon: "✨"
                 });
             } else {
@@ -332,6 +342,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (confirmRemoval) {
                 await TreasuryStorage.removePin();
+                
+                // Clear pin from active session
+                cachedSession = await TreasuryStorage.getActiveSession();
+                if (cachedSession) {
+                    delete cachedSession.pin;
+                    await TreasuryStorage.setActiveSession(cachedSession);
+                }
+
                 await showAppModal({
                     title: "Protection Removed",
                     message: "🔒 PIN protection removed successfully.",
@@ -375,7 +393,8 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedDurationHours = parseInt(e.target.dataset.duration);
             
             const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-            cachedSession = { targetTime, duration: selectedDurationHours };
+            const currentPin = cachedSession ? cachedSession.pin : null;
+            cachedSession = { targetTime, duration: selectedDurationHours, pin: currentPin };
             await TreasuryStorage.setActiveSession(cachedSession);
             updateCountdownDisplay();
         });
@@ -413,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setTimeout(() => particle.remove(), 1000);
     }
 
-    // Save Treasury Entry (With Correct Singular/Plural Grammar)
+    // Save Treasury Entry
     saveTreasuryBtn?.addEventListener('click', async () => {
         if (currentHeartCount === 0) {
             await showAppModal({
@@ -484,7 +503,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!previewBox || !previewContent) return;
 
         previewBox.classList.remove('hidden');
-        previewContent.innerHTML = ''; // Clear previous content
+        previewContent.innerHTML = '';
 
         if (media.type === 'photo') {
             const img = document.createElement('img');
@@ -587,7 +606,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const timelineModal = document.getElementById('timelineModal');
     
-    // Secure Timeline Renderer (Safe from XSS Injection)
     document.getElementById('viewMemoriesBtn')?.addEventListener('click', async () => {
         const db = await TreasuryStorage.getDatabase();
         const dayData = db[currentSelectedDateKey];
@@ -604,13 +622,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const item = document.createElement('div');
                 item.className = 'p-3 bg-slate-800/80 rounded-lg border border-slate-700 space-y-2';
                 
-                // Timestamp
                 const timeDiv = document.createElement('div');
                 timeDiv.className = 'text-xs text-rose-300 font-semibold';
                 timeDiv.textContent = entry.timestamp;
                 item.appendChild(timeDiv);
 
-                // Note (Safe textContent assignment to prevent XSS)
                 if (entry.note) {
                     const notePara = document.createElement('p');
                     notePara.className = 'text-sm text-slate-200';
@@ -618,7 +634,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     item.appendChild(notePara);
                 }
 
-                // Media Attachment
                 if (entry.media) {
                     if (entry.media.type === 'photo') {
                         const img = document.createElement('img');
@@ -671,7 +686,6 @@ document.addEventListener('DOMContentLoaded', () => {
         TreasuryStorage.exportData();
     });
 
-    // Trigger file dialog on button click
     document.getElementById('importBtn')?.addEventListener('click', () => {
         document.getElementById('importFileInput')?.click();
     });
