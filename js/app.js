@@ -2,7 +2,10 @@
  * Main Application Orchestrator for My Heart Treasury.
  */
 document.addEventListener('DOMContentLoaded', async () => {
-    // Initialize icons on initial load
+    // 1. Initialize IndexedDB singleton first to guarantee storage state
+    await TreasuryStorage.init();
+
+    // 2. Initialize icons
     lucide.createIcons();
 
     // Register Service Worker for Offline PWA Support
@@ -121,7 +124,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     let tokenClient = null;
     let accessToken = null;
 
-    // Hardens local storage against browser eviction
     async function initStoragePersistence() {
         if (navigator.storage && navigator.storage.persist) {
             const isPersisted = await navigator.storage.persist();
@@ -130,7 +132,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     initStoragePersistence();
 
-    // Initialize Google Identity Services Token Client
     function initGoogleAuth() {
         if (typeof google !== 'undefined' && google.accounts) {
             tokenClient = google.accounts.oauth2.initTokenClient({
@@ -146,10 +147,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Run auth init after page load
     window.addEventListener('load', initGoogleAuth);
 
-    // Bind Cloud Sync Button
     document.getElementById('gdriveSyncBtn')?.addEventListener('click', () => {
         if (!tokenClient) {
             initGoogleAuth();
@@ -162,7 +161,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Upload IndexedDB JSON Payload directly to Google Drive App Folder
     async function performDriveBackup() {
         try {
             const syncStatusText = document.getElementById('attachmentIndicator');
@@ -225,67 +223,63 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // PIN Lock Check on App Startup (Upgraded with robust storage initialization)
+    // ==========================================
+    // 🔒 PIN LOCK & STARTUP CHECK
+    // ==========================================
     async function checkPinLock() {
-        try {
-            if (typeof TreasuryStorage.init === 'function') {
-                await TreasuryStorage.init();
-            }
-            const savedPinToken = await TreasuryStorage.getPin();
-            const pinModal = document.getElementById('pinLockModal');
-            const pinInput = document.getElementById('pinInput');
-            const submitPinBtn = document.getElementById('submitPinBtn');
+        const savedPinToken = await TreasuryStorage.getPin();
+        const pinModal = document.getElementById('pinLockModal');
+        const pinInput = document.getElementById('pinInput');
+        const submitPinBtn = document.getElementById('submitPinBtn');
 
-            if (savedPinToken && pinModal) {
-                pinModal.classList.remove('hidden');
-                const pinTitle = document.getElementById('pinModalTitle');
-                const pinDesc = document.getElementById('pinModalDesc');
-                if (pinTitle) pinTitle.textContent = "Unlock Your Treasury";
-                if (pinDesc) pinDesc.textContent = "Enter your PIN code to access your vault.";
-                if (submitPinBtn) submitPinBtn.textContent = "Unlock";
+        // IF A PIN EXISTS IN STORAGE: MANDATORY UNLOCK PROMPT
+        if (savedPinToken && pinModal) {
+            pinModal.classList.remove('hidden');
+            const titleEl = document.getElementById('pinModalTitle');
+            const descEl = document.getElementById('pinModalDesc');
+            if (titleEl) titleEl.textContent = "Unlock Your Treasury";
+            if (descEl) descEl.textContent = "Enter your PIN code to access your vault.";
+            if (submitPinBtn) submitPinBtn.textContent = "Unlock";
 
-                const handleUnlock = async () => {
-                    const enteredPin = pinInput ? pinInput.value : '';
-                    const isValid = await TreasuryStorage.verifyPin(enteredPin);
+            const handleUnlock = async () => {
+                const enteredPin = pinInput ? pinInput.value : '';
+                const isValid = await TreasuryStorage.verifyPin(enteredPin);
 
-                    if (isValid) {
-                        cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
-                        cachedSession.pin = enteredPin;
-                        await TreasuryStorage.setActiveSession(cachedSession);
+                if (isValid) {
+                    cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
+                    cachedSession.pin = enteredPin;
+                    await TreasuryStorage.setActiveSession(cachedSession);
 
-                        pinModal.classList.add('hidden');
-                        if (pinInput) pinInput.value = '';
-                    } else {
-                        await showAppModal({
-                            title: "Incorrect PIN",
-                            message: "⚠️ Incorrect PIN. Please try again.",
-                            icon: "⚠️"
-                        });
-                        if (pinInput) pinInput.value = '';
-                    }
-                };
-
-                if (submitPinBtn) submitPinBtn.onclick = handleUnlock;
-                
-                if (pinInput) {
-                    pinInput.onkeydown = (e) => {
-                        if (e.key === 'Enter') {
-                            handleUnlock();
-                        }
-                    };
+                    pinModal.classList.add('hidden');
+                    if (pinInput) pinInput.value = '';
+                } else {
+                    await showAppModal({
+                        title: "Incorrect PIN",
+                        message: "⚠️ Incorrect PIN. Please try again.",
+                        icon: "⚠️"
+                    });
+                    if (pinInput) pinInput.value = '';
                 }
+            };
+
+            if (submitPinBtn) submitPinBtn.onclick = handleUnlock;
+            if (pinInput) {
+                pinInput.onkeydown = (e) => {
+                    if (e.key === 'Enter') handleUnlock();
+                };
             }
-        } catch (err) {
-            console.error('PIN Lock Initialization Error:', err);
         }
     }
     await checkPinLock();
 
-    // PIN Setup & Change Listener
+    // ==========================================
+    // 🛡️ PIN SETTINGS & CHANGE MANAGEMENT
+    // ==========================================
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
         const currentPinToken = await TreasuryStorage.getPin();
         let verifiedOldPin = null;
-        
+
+        // RULE: IF A PIN IS ALREADY SET, DEMAND OLD PIN FIRST
         if (currentPinToken) {
             const enteredCurrent = await showAppModal({
                 title: "Verify Current PIN",
@@ -294,8 +288,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 isPrompt: true,
                 inputPlaceholder: "••••"
             });
-            if (enteredCurrent === null) return; // Cancelled
-            
+            if (enteredCurrent === null) return; // User cancelled
+
             const isCurrentValid = await TreasuryStorage.verifyPin(enteredCurrent);
             if (!isCurrentValid) {
                 await showAppModal({
@@ -306,35 +300,87 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             verifiedOldPin = enteredCurrent;
-        }
 
-        const actionChoice = await showAppModal({
-            title: "PIN Management",
-            message: "Click OK to Set or Change your PIN.\nClick Cancel if you want to Remove PIN protection.",
-            icon: "🛡️",
-            isConfirm: true
-        });
+            // Ask whether to change or remove existing PIN
+            const actionChoice = await showAppModal({
+                title: "PIN Management",
+                message: "Click OK to Change your PIN.\nClick Cancel to Remove PIN protection completely.",
+                icon: "🛡️",
+                isConfirm: true
+            });
 
-        if (actionChoice) {
+            if (actionChoice) {
+                // Change PIN Flow
+                const newPin = await showAppModal({
+                    title: "Set New PIN",
+                    message: "Enter a new 4 to 6-digit numerical PIN code:",
+                    icon: "🔑",
+                    isPrompt: true,
+                    inputPlaceholder: "4-6 digits"
+                });
+                if (newPin === null) return;
+
+                if (/^\d{4,6}$/.test(newPin)) {
+                    await TreasuryStorage.setPin(newPin, verifiedOldPin);
+                    cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
+                    cachedSession.pin = newPin;
+                    await TreasuryStorage.setActiveSession(cachedSession);
+
+                    await showAppModal({
+                        title: "Success",
+                        message: "✨ PIN updated successfully and vault encrypted!",
+                        icon: "✨"
+                    });
+                } else {
+                    await showAppModal({
+                        title: "Invalid PIN",
+                        message: "⚠️ Please enter a valid 4 to 6-digit numerical code.",
+                        icon: "⚠️"
+                    });
+                }
+            } else {
+                // Remove PIN Flow
+                const confirmRemoval = await showAppModal({
+                    title: "Remove PIN Protection",
+                    message: "⚠️ Are you sure you want to completely remove PIN protection?",
+                    icon: "🔓",
+                    isConfirm: true
+                });
+                if (confirmRemoval) {
+                    await TreasuryStorage.removePin(verifiedOldPin);
+                    cachedSession = await TreasuryStorage.getActiveSession();
+                    if (cachedSession) {
+                        delete cachedSession.pin;
+                        await TreasuryStorage.setActiveSession(cachedSession);
+                    }
+
+                    await showAppModal({
+                        title: "Protection Removed",
+                        message: "🔒 PIN protection removed successfully.",
+                        icon: "🔒"
+                    });
+                }
+            }
+        } else {
+            // RULE: IF NO PIN IS SET, SET ONE UP DIRECTLY
             const newPin = await showAppModal({
                 title: "Set New PIN",
-                message: "Enter a new 4 to 6-digit numerical PIN code:",
+                message: "Enter a 4 to 6-digit numerical PIN code to protect your vault:",
                 icon: "🔑",
                 isPrompt: true,
                 inputPlaceholder: "4-6 digits"
             });
-            if (newPin === null) return; // Cancelled
+            if (newPin === null) return;
 
             if (/^\d{4,6}$/.test(newPin)) {
-                await TreasuryStorage.setPin(newPin, verifiedOldPin);
-                
+                await TreasuryStorage.setPin(newPin);
                 cachedSession = await TreasuryStorage.getActiveSession() || { targetTime: Date.now() + 24 * 3600 * 1000 };
                 cachedSession.pin = newPin;
                 await TreasuryStorage.setActiveSession(cachedSession);
 
                 await showAppModal({
                     title: "Success",
-                    message: "✨ PIN set successfully and vault encrypted!",
+                    message: "✨ PIN created successfully and vault encrypted!",
                     icon: "✨"
                 });
             } else {
@@ -344,47 +390,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                     icon: "⚠️"
                 });
             }
-        } else {
-            const confirmRemoval = await showAppModal({
-                title: "Remove PIN Protection",
-                message: "⚠️ Are you sure you want to completely remove PIN protection?",
-                icon: "🔓",
-                isConfirm: true
-            });
-            if (confirmRemoval) {
-                await TreasuryStorage.removePin(verifiedOldPin);
-                
-                cachedSession = await TreasuryStorage.getActiveSession();
-                if (cachedSession) {
-                    delete cachedSession.pin;
-                    await TreasuryStorage.setActiveSession(cachedSession);
-                }
-
-                await showAppModal({
-                    title: "Protection Removed",
-                    message: "🔒 PIN protection removed successfully.",
-                    icon: "🔒"
-                });
-            }
         }
     });
 
-    // Optimized Countdown Timer
+    // Countdown Session Logic
     async function initSession() {
-        try {
-            if (typeof TreasuryStorage.init === 'function') {
-                await TreasuryStorage.init();
-            }
-            cachedSession = await TreasuryStorage.getActiveSession();
-            if (!cachedSession) {
-                const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-                cachedSession = { targetTime, duration: selectedDurationHours };
-                await TreasuryStorage.setActiveSession(cachedSession);
-            }
-            updateCountdownDisplay();
-        } catch (err) {
-            console.error('Session Init Error:', err);
+        cachedSession = await TreasuryStorage.getActiveSession();
+        if (!cachedSession) {
+            const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
+            cachedSession = { targetTime, duration: selectedDurationHours };
+            await TreasuryStorage.setActiveSession(cachedSession);
         }
+        updateCountdownDisplay();
     }
 
     function updateCountdownDisplay() {
@@ -417,7 +434,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // Heart Counter & Particles
+    // Heart Counter & Particle Spawn
     tapHeartBtn?.addEventListener('click', (e) => {
         currentHeartCount++;
         if (heartCountBadge) heartCountBadge.textContent = `${currentHeartCount} ${currentHeartCount === 1 ? 'Heart' : 'Hearts'}`;
@@ -559,7 +576,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         attachmentModal?.classList.add('hidden');
     });
 
-    // Calendar Modal Handlers
+    // Calendar & Timeline Handlers
     const calendarModal = document.getElementById('calendarModal');
     const timelineModal = document.getElementById('timelineModal');
 
@@ -595,7 +612,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const totalDays = new Date(year, month + 1, 0).getDate();
         const allEntries = await TreasuryStorage.getAllEntries();
 
-        // Day headers
         ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach(d => {
             const headerCell = document.createElement('div');
             headerCell.className = 'text-center text-[10px] text-slate-500 font-bold py-1';
@@ -603,7 +619,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             grid.appendChild(headerCell);
         });
 
-        // Blank cells for start offset
         for (let i = 0; i < firstDayIndex; i++) {
             const emptyCell = document.createElement('div');
             emptyCell.className = 'calendar-day-cell opacity-20 pointer-events-none';
@@ -648,8 +663,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             grid.appendChild(cell);
         }
-        
-        // Refresh icons if any are used in calendar cells
         lucide.createIcons();
     }
 
@@ -755,5 +768,4 @@ document.addEventListener('DOMContentLoaded', async () => {
             lucide.createIcons();
         }
     });
-
 });
