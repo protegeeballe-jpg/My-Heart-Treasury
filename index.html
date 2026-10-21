@@ -38,7 +38,7 @@
 
     <!-- Local Tailwind Engine & Local Icons -->
     <script src="js/tailwind.js"></script>
-    <script src="js/lucide.js" defer></script>
+    <script src="js/lucide.js"></script>
 </head>
 <body class="treasury-body h-screen overflow-hidden flex flex-col justify-between p-4 pt-8">
 
@@ -229,3 +229,26 @@
                 <button id="viewMemoriesBtn" class="btn-secondary hidden">
                     <i data-lucide="eye" class="w-4 h-4 text-rose-400"></i>
                     <span>View Day's Memories</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timeline / Day's Memories Modal -->
+    <div id="timelineModal" class="modal-backdrop hidden">
+        <div class="modal-card max-w-md">
+            <div class="modal-header">
+                <h3 id="timelineModalTitle" class="font-bold text-rose-300">Memories</h3>
+                <button id="closeTimelineModalBtn" class="modal-close-btn">&times;</button>
+            </div>
+            <div id="timelineList" class="timeline-scroll-container"></div>
+        </div>
+    </div>
+
+    <!-- Core Scripts -->
+    <script src="js/storage.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/media.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
