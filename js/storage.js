@@ -5,12 +5,24 @@
 const TreasuryStorage = {
     dbName: 'HeartTreasuryDB',
     storeName: 'vault',
+    dbInstance: null,
+    initPromise: null,
 
-    async openDB() {
-        return new Promise((resolve, reject) => {
+    // Promise Singleton: Opens IndexedDB once cleanly and resolves all callers safely
+    async init() {
+        if (this.dbInstance) return this.dbInstance;
+        if (this.initPromise) return this.initPromise;
+
+        this.initPromise = new Promise((resolve, reject) => {
             const request = indexedDB.open(this.dbName, 1);
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => {
+                this.initPromise = null;
+                reject(request.error);
+            };
+            request.onsuccess = () => {
+                this.dbInstance = request.result;
+                resolve(this.dbInstance);
+            };
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
                 if (!db.objectStoreNames.contains(this.storeName)) {
@@ -18,6 +30,12 @@ const TreasuryStorage = {
                 }
             };
         });
+
+        return this.initPromise;
+    },
+
+    async openDB() {
+        return await this.init();
     },
 
     async get(key) {
@@ -111,10 +129,10 @@ const TreasuryStorage = {
             throw new Error("Invalid PIN or corrupted data vault.");
         }
     },
-    // --------------------------------------------------
 
     async getActiveSession() {
         try {
+            await this.init();
             return await this.get('active_session') || null;
         } catch (err) {
             console.error('Failed to get active session:', err);
@@ -124,15 +142,16 @@ const TreasuryStorage = {
 
     async setActiveSession(session) {
         try {
+            await this.init();
             await this.set('active_session', session);
         } catch (err) {
             console.error('Failed to save active session:', err);
         }
     },
 
-    // HARDENED: Throws error instead of silently returning empty object, supports override PIN
     async getDatabase(overridePin = null) {
         try {
+            await this.init();
             const rawData = await this.get('treasury_db');
             if (!rawData) return {};
 
@@ -159,13 +178,13 @@ const TreasuryStorage = {
         }
     },
 
-    // COMPATIBILITY WRAPPER: Matches app.js call for calendar & timeline views
     async getAllEntries() {
         return await this.getDatabase();
     },
 
     async saveDayEntry(dateKey, payload) {
         try {
+            await this.init();
             let db = await this.getDatabase();
             if (!db[dateKey]) {
                 db[dateKey] = { totalHearts: 0, entries: [] };
@@ -192,15 +211,16 @@ const TreasuryStorage = {
 
     async getPin() {
         try {
+            await this.init();
             return await this.get('my_heart_treasury_pin_v1') || null;
         } catch (err) {
             return null;
         }
     },
 
-    // HARDENED: Requires old PIN verification and uses override PIN for decryption
     async setPin(pin, oldPin = null) {
         try {
+            await this.init();
             const existingPinToken = await this.getPin();
             if (existingPinToken) {
                 if (!oldPin) {
@@ -228,6 +248,7 @@ const TreasuryStorage = {
 
     async verifyPin(pin) {
         try {
+            await this.init();
             const token = await this.getPin();
             if (!token) return false;
             await this._decrypt(pin, token);
@@ -237,9 +258,9 @@ const TreasuryStorage = {
         }
     },
 
-    // HARDENED: Requires current PIN verification and uses override PIN for decryption
     async removePin(currentPin) {
         try {
+            await this.init();
             const isValid = await this.verifyPin(currentPin);
             if (!isValid) {
                 throw new Error("Incorrect PIN. Cannot remove security protection.");
@@ -254,8 +275,8 @@ const TreasuryStorage = {
         }
     },
 
-    // COMPATIBILITY WRAPPER: Matches app.js import handler
     async restoreDatabase(importedData) {
+        await this.init();
         const activeSession = await this.getActiveSession();
         if (activeSession && activeSession.pin) {
             const encryptedPayload = await this._encrypt(activeSession.pin, importedData);
