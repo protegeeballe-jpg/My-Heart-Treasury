@@ -159,6 +159,11 @@ const TreasuryStorage = {
         }
     },
 
+    // COMPATIBILITY WRAPPER: Matches app.js call for calendar & timeline views
+    async getAllEntries() {
+        return await this.getDatabase();
+    },
+
     async saveDayEntry(dateKey, payload) {
         try {
             let db = await this.getDatabase();
@@ -249,6 +254,17 @@ const TreasuryStorage = {
         }
     },
 
+    // COMPATIBILITY WRAPPER: Matches app.js import handler
+    async restoreDatabase(importedData) {
+        const activeSession = await this.getActiveSession();
+        if (activeSession && activeSession.pin) {
+            const encryptedPayload = await this._encrypt(activeSession.pin, importedData);
+            await this.set('treasury_db', encryptedPayload);
+        } else {
+            await this.set('treasury_db', importedData);
+        }
+    },
+
     async exportData() {
         try {
             const db = await this.getDatabase();
@@ -269,15 +285,7 @@ const TreasuryStorage = {
         reader.onload = async (event) => {
             try {
                 const importedData = JSON.parse(event.target.result);
-                
-                const activeSession = await this.getActiveSession();
-                if (activeSession && activeSession.pin) {
-                    const encryptedPayload = await this._encrypt(activeSession.pin, importedData);
-                    await this.set('treasury_db', encryptedPayload);
-                } else {
-                    await this.set('treasury_db', importedData);
-                }
-
+                await this.restoreDatabase(importedData);
                 callback(true);
             } catch (e) {
                 console.error("Import parse error:", e);
