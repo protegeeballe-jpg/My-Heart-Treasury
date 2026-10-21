@@ -1,11 +1,11 @@
-const CACHE_NAME = 'heart-treasury-v5';
+const CACHE_NAME = 'heart-treasury-v6';
 const assetsToCache = [
     './',
     './index.html',
     './manifest.json',
     './css/styles.css',
-    './css/tailwind.min.css',
-    './js/lucide.min.js',
+    './js/tailwind.js',
+    './js/lucide.js',
     './js/storage.js',
     './js/audio.js',
     './js/media.js',
