@@ -1,6 +1,44 @@
 /**
  * Main Application Orchestrator for My Heart Treasury.
  */
+
+/**
+ * Offline-Ready Geolocation Controller
+ */
+const LocationController = {
+    // Captures device latitude & longitude via hardware GPS (Works 100% offline)
+    async getCurrentLocation() {
+        if (!('geolocation' in navigator)) {
+            console.warn('Geolocation is not supported by this browser.');
+            return null;
+        }
+
+        return new Promise((resolve) => {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const { latitude, longitude, accuracy } = position.coords;
+                    resolve({
+                        latitude,
+                        longitude,
+                        accuracy,
+                        mapsUrl: `https://www.google.com/maps?q=${latitude},${longitude}`,
+                        timestamp: Date.now()
+                    });
+                },
+                (error) => {
+                    console.warn(`Geolocation error (${error.code}): ${error.message}`);
+                    resolve(null); // Graceful fallback if GPS is denied or unavailable
+                },
+                {
+                    enableHighAccuracy: true, // Forces hardware GPS where available
+                    timeout: 5000,           // 5-second max wait to prevent hangs
+                    maximumAge: 0            // Forces fresh coordinates
+                }
+            );
+        });
+    }
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     await TreasuryStorage.init();
     lucide.createIcons();
@@ -252,7 +290,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const currentPinToken = await TreasuryStorage.getPin();
         
         if (currentPinToken) {
-            // RULE: Must enter current PIN first before any changes
             const enteredCurrent = await showAppModal({
                 title: "Verify Current PIN",
                 message: "Enter your CURRENT PIN to proceed with changes:",
@@ -260,7 +297,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 isPrompt: true,
                 inputPlaceholder: "••••"
             });
-            if (enteredCurrent === null) return; // Cancelled
+            if (enteredCurrent === null) return;
 
             const isCurrentValid = await TreasuryStorage.verifyPin(enteredCurrent);
             if (!isCurrentValid) {
@@ -269,7 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     message: "⚠️ Incorrect current PIN. Action cancelled.",
                     icon: "⚠️"
                 });
-                return; // HALT EXECUTION: Wrong PIN blocks all changes
+                return;
             }
 
             const actionChoice = await showAppModal({
@@ -322,7 +359,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
         } else {
-            // RULE: If no PIN is set, allow setting one directly without old PIN check
             const newPin = await showAppModal({
                 title: "Set New PIN",
                 message: "Enter a 4 to 6-digit numerical PIN code to protect your vault:",
@@ -422,7 +458,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => particle.remove(), 1000);
     }
 
-    // Save Treasury Entry
+    // Save Treasury Entry (Includes Automatic Offline Location Tagging)
     saveTreasuryBtn?.addEventListener('click', async () => {
         if (currentHeartCount === 0) {
             await showAppModal({
@@ -434,16 +470,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const dateKey = savingsDateInput ? savingsDateInput.value : getTodayLocalDate();
+        
+        // Automatically capture hardware GPS coordinates (works offline)
+        const locationData = await LocationController.getCurrentLocation();
+
         const sessionPayload = {
             hearts: currentHeartCount,
-            attachment: MediaController.pendingAttachment
+            attachment: {
+                ...(MediaController.pendingAttachment || {}),
+                location: locationData // Automatically embedded in attachment payload
+            }
         };
 
         await TreasuryStorage.saveDayEntry(dateKey, sessionPayload, sessionPin);
 
+        const locationNotice = locationData ? "\n📍 Location tagged!" : "";
         await showAppModal({
             title: "Treasury Saved",
-            message: `Successfully deposited ${currentHeartCount} ${currentHeartCount === 1 ? 'heart' : 'hearts'} to ${dateKey}! ✨`,
+            message: `Successfully deposited ${currentHeartCount} ${currentHeartCount === 1 ? 'heart' : 'hearts'} to ${dateKey}! ✨${locationNotice}`,
             icon: "🌟"
         });
         
@@ -575,6 +619,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 </div>
             `;
 
+            // RENDER GOOGLE MAPS LINK IF LOCATION EXISTS AT ROOT ATTACHMENT
+            const rootLocation = entry.attachment?.location;
+            if (rootLocation && rootLocation.mapsUrl) {
+                const locBtn = document.createElement('a');
+                locBtn.href = rootLocation.mapsUrl;
+                locBtn.target = '_blank';
+                locBtn.rel = 'noopener noreferrer';
+                locBtn.className = 'inline-flex items-center gap-1 mt-2 px-2.5 py-1 text-[11px] font-medium text-rose-300 bg-rose-950/40 border border-rose-800/50 rounded-full hover:bg-rose-900/50 transition-colors';
+                locBtn.innerHTML = `📍 View on Google Maps (${rootLocation.latitude.toFixed(4)}, ${rootLocation.longitude.toFixed(4)})`;
+                card.appendChild(locBtn);
+            }
+
             if (entry.entries && Array.isArray(entry.entries)) {
                 entry.entries.forEach(sub => {
                     if (sub.note) {
@@ -596,6 +652,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                             vid.className = 'w-full h-36 object-cover rounded-lg mt-2';
                             card.appendChild(vid);
                         }
+                    }
+
+                    // RENDER GOOGLE MAPS LINK IF LOCATION EXISTS IN SUB-ENTRY
+                    const subLocation = sub.location;
+                    if (subLocation && subLocation.mapsUrl) {
+                        const locBtn = document.createElement('a');
+                        locBtn.href = subLocation.mapsUrl;
+                        locBtn.target = '_blank';
+                        locBtn.rel = 'noopener noreferrer';
+                        locBtn.className = 'inline-flex items-center gap-1 mt-2 px-2.5 py-1 text-[11px] font-medium text-rose-300 bg-rose-950/40 border border-rose-800/50 rounded-full hover:bg-rose-900/50 transition-colors';
+                        locBtn.innerHTML = `📍 View on Google Maps (${subLocation.latitude.toFixed(4)}, ${subLocation.longitude.toFixed(4)})`;
+                        card.appendChild(locBtn);
                     }
                 });
             }
