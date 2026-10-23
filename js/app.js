@@ -498,7 +498,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (indicator) indicator.textContent = "Attach";
     });
 
-    // Attachment & Calendar Modals
+    // ==========================================
+    // 📎 ATTACHMENT MODAL WIRING & PREVIEW HANDLERS
+    // ==========================================
     const attachmentModal = document.getElementById('attachmentModal');
     const calendarModal = document.getElementById('calendarModal');
     const timelineModal = document.getElementById('timelineModal');
@@ -508,6 +510,81 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.getElementById('closeAttachmentModalBtn')?.addEventListener('click', () => {
+        attachmentModal?.classList.add('hidden');
+    });
+
+    const photoInput = document.getElementById('photoInput');
+    const heartNoteInput = document.getElementById('heartNoteInput');
+    const mediaPreviewBox = document.getElementById('mediaPreviewBox');
+    const previewContent = document.getElementById('previewContent');
+    const clearMediaBtn = document.getElementById('clearMediaBtn');
+    const confirmAttachmentBtn = document.getElementById('confirmAttachmentBtn');
+    const attachmentIndicator = document.getElementById('attachmentIndicator');
+    const startRecorderBtn = document.getElementById('startRecorderBtn');
+    const cameraViewportContainer = document.getElementById('cameraViewportContainer');
+    const cameraPreview = document.getElementById('cameraPreview');
+    const recordProgress = document.getElementById('recordProgress');
+
+    // Handle Photo Selection & Compression Preview
+    photoInput?.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        MediaController.readImageFile(file, (attachment) => {
+            if (attachment && attachment.dataUrl) {
+                previewContent.innerHTML = `<img src="${attachment.dataUrl}" class="w-full h-32 object-cover rounded-lg">`;
+                mediaPreviewBox.classList.remove('hidden');
+            }
+        });
+    });
+
+    // Handle Note Input
+    heartNoteInput?.addEventListener('input', (e) => {
+        MediaController.setNoteAttachment(e.target.value);
+    });
+
+    // Handle 3s Video Recording Trigger
+    startRecorderBtn?.addEventListener('click', async () => {
+        cameraViewportContainer?.classList.remove('hidden');
+        await MediaController.startThreeSecondRecording(cameraPreview, recordProgress, (attachment) => {
+            cameraViewportContainer?.classList.add('hidden');
+            if (attachment && attachment.dataUrl) {
+                previewContent.innerHTML = `<video src="${attachment.dataUrl}" controls class="w-full h-32 object-cover rounded-lg"></video>`;
+                mediaPreviewBox.classList.remove('hidden');
+            }
+        });
+    });
+
+    // Clear Media Preview
+    clearMediaBtn?.addEventListener('click', () => {
+        MediaController.clear();
+        mediaPreviewBox?.classList.add('hidden');
+        if (previewContent) previewContent.innerHTML = '';
+        if (photoInput) photoInput.value = '';
+    });
+
+    // Confirm Attachment Button (Saves to pending state & closes modal)
+    confirmAttachmentBtn?.addEventListener('click', () => {
+        const noteText = heartNoteInput?.value?.trim() || '';
+
+        if (noteText && MediaController.pendingAttachment) {
+            MediaController.pendingAttachment.note = noteText;
+        } else if (noteText && !MediaController.pendingAttachment) {
+            MediaController.setNoteAttachment(noteText);
+        }
+
+        if (MediaController.pendingAttachment) {
+            if (attachmentIndicator) {
+                attachmentIndicator.textContent = "Attached ✓";
+                attachmentIndicator.classList.add('text-rose-400', 'font-bold');
+            }
+        } else {
+            if (attachmentIndicator) {
+                attachmentIndicator.textContent = "Attach";
+                attachmentIndicator.classList.remove('text-rose-400', 'font-bold');
+            }
+        }
+
         attachmentModal?.classList.add('hidden');
     });
 
