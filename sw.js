@@ -1,22 +1,24 @@
-const CACHE_NAME = 'heart-treasury-v6';
-const assetsToCache = [
-    './',
-    './index.html',
-    './manifest.json',
-    './css/styles.css',
-    './js/tailwind.js',
-    './js/lucide.js',
-    './js/storage.js',
-    './js/audio.js',
-    './js/media.js',
-    './js/app.js'
-];
+const CACHE_NAME = 'heart-treasury-v7';
 
-// Install and pre-cache core local assets
+// Install and pre-cache core local assets with graceful error trapping
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(assetsToCache);
+            // Using explicit paths that work reliably on GitHub Pages subpaths
+            return cache.addAll([
+                './',
+                './index.html',
+                './manifest.json',
+                './css/styles.css',
+                './js/tailwind.js',
+                './js/lucide.js',
+                './js/storage.js',
+                './js/audio.js',
+                './js/media.js',
+                './js/app.js'
+            ]).catch(err => {
+                console.warn('Cache addAll warning during install:', err);
+            });
         })
     );
     self.skipWaiting();
@@ -39,14 +41,13 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Network-First Fetch Strategy (Bypasses Google APIs to protect sync integrity)
+// Robust Fetch Strategy: Network First, falling back cleanly to Cache
 self.addEventListener('fetch', (event) => {
-    // Only handle GET requests
     if (event.request.method !== 'GET') return;
 
     const url = new URL(event.request.url);
 
-    // Bypass Service Worker cache for Google APIs and Authentication
+    // Bypass Service Worker cache for Google APIs and external auth
     if (url.hostname.includes('googleapis.com') || url.hostname.includes('google.com')) {
         return;
     }
@@ -54,15 +55,15 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
         fetch(event.request)
             .then((networkResponse) => {
-                // If online: grab the absolute freshest file from the server and update the cache
                 return caches.open(CACHE_NAME).then((cache) => {
                     cache.put(event.request, networkResponse.clone());
                     return networkResponse;
                 });
             })
             .catch(() => {
-                // If offline: fall back to the last known cached version
-                return caches.match(event.request);
+                return caches.match(event.request).then((cachedResponse) => {
+                    return cachedResponse || caches.match('./index.html');
+                });
             })
     );
 });
