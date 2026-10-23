@@ -10,7 +10,7 @@ const MediaController = {
         this.recordedChunks = [];
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            videoElement.srcObject = stream;
+            if (videoElement) videoElement.srcObject = stream;
 
             this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
             this.mediaRecorder.ondataavailable = (e) => {
@@ -21,11 +21,18 @@ const MediaController = {
                 stream.getTracks().forEach(track => track.stop());
                 const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
                 const reader = new FileReader();
+
                 reader.onloadend = () => {
                     const attachment = { type: 'video', dataUrl: reader.result };
                     this.pendingAttachment = attachment;
                     if (onComplete) onComplete(attachment);
                 };
+
+                reader.onerror = () => {
+                    console.error("Video reading failed.");
+                    if (onComplete) onComplete(null);
+                };
+
                 reader.readAsDataURL(blob);
             };
 
@@ -43,14 +50,35 @@ const MediaController = {
                 }
             }, 100);
         } catch(err) {
+            console.error('Camera access error:', err);
             alert('Camera access denied or unavailable.');
+            if (onComplete) onComplete(null);
         }
     },
 
     readImageFile(file, onComplete) {
+        // SAFETY GUARD 1: Prevent crash if file is missing or undefined
+        if (!file) {
+            if (onComplete) onComplete(null);
+            return;
+        }
+
         const reader = new FileReader();
+
+        reader.onerror = () => {
+            console.error("FileReader failed to read the image file.");
+            if (onComplete) onComplete(null);
+        };
+
         reader.onload = (e) => {
             const img = new Image();
+
+            img.onerror = () => {
+                console.error("Image decoding failed (corrupted or unsupported format).");
+                alert('Invalid image format or corrupted file.');
+                if (onComplete) onComplete(null);
+            };
+
             img.onload = () => {
                 const canvas = document.createElement('canvas');
                 const MAX_WIDTH = 800;
@@ -81,8 +109,10 @@ const MediaController = {
                 this.pendingAttachment = attachment;
                 if (onComplete) onComplete(attachment);
             };
+
             img.src = e.target.result;
         };
+
         reader.readAsDataURL(file);
     },
 
