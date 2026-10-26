@@ -44,13 +44,13 @@ const MediaController = {
                 }
             }
 
-            // Prefer WebM/Opus codecs first as they have the highest MediaRecorder support across browsers.
-            const mimeTypes = [
-                'video/webm;codecs=vp9,opus',
-                'video/webm;codecs=vp8,opus',
-                'video/webm',
-                'video/mp4'
-            ];
+           // Prefer MP4 when supported, then try WebM formats.
+           const mimeTypes = [
+               'video/mp4',
+               'video/webm;codecs=vp8,opus',
+               'video/webm;codecs=vp9,opus',
+               'video/webm'
+           ];
 
             let options = {};
             if (typeof MediaRecorder.isTypeSupported === 'function') {
