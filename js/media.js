@@ -50,19 +50,32 @@ const MediaController = {
 
             this.mediaRecorder.start();
 
-            let elapsed = 0;
-            const interval = setInterval(() => {
-                elapsed += 100;
-                const progress = (elapsed / 3000) * 100;
-                if (progressBarElement) progressBarElement.style.width = `${progress}%`;
+           
+            // Use actual elapsed time for more consistent recording duration.
+            const recordingDurationMs = 3200;
+            const startedAt = performance.now();
 
-                if (elapsed >= 3000) {
+            const interval = setInterval(() => {
+                const elapsed = performance.now() - startedAt;
+                const progress = Math.min(
+                    (elapsed / recordingDurationMs) * 100,
+                    100
+                );
+
+                if (progressBarElement) {
+                    progressBarElement.style.width = `${progress}%`;
+                }
+
+                if (elapsed >= recordingDurationMs) {
                     clearInterval(interval);
-                    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-                        this.mediaRecorder.stop();
+
+                    const recorder = this.mediaRecorder;
+                    if (recorder && recorder.state !== 'inactive') {
+                        recorder.stop();
                     }
                 }
-            }, 100);
+            }, 50);
+
         } catch(err) {
             console.error('Camera access error:', err);
             alert('Camera access denied, unsupported, or unavailable on this browser.');
