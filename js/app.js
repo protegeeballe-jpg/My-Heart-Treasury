@@ -564,7 +564,13 @@ heartNoteInput?.addEventListener('input', (e) => {
         await MediaController.startThreeSecondRecording(cameraPreview, recordProgress, (attachment) => {
             cameraViewportContainer?.classList.add('hidden');
             if (attachment && attachment.dataUrl) {
-                previewContent.innerHTML = `<video src="${attachment.dataUrl}" controls class="w-full h-32 object-cover rounded-lg"></video>`;
+               const videoPreview = document.createElement('video');
+                videoPreview.src = attachment.dataUrl;
+                videoPreview.controls = true;
+                videoPreview.playsInline = true;
+                videoPreview.className = 'w-full h-32 object-cover rounded-lg';
+
+                previewContent.replaceChildren(videoPreview);
                 mediaPreviewBox.classList.remove('hidden');
             }
         });
