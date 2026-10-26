@@ -9,7 +9,7 @@ const MediaController = {
     async startThreeSecondRecording(videoElement, progressBarElement, onComplete) {
         this.recordedChunks = [];
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             if (videoElement) videoElement.srcObject = stream;
 
             // Cross-browser MIME type negotiation (Fixes iOS Safari crash)
