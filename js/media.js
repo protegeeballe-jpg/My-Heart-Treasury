@@ -85,8 +85,13 @@ const MediaController = {
                 console.error('MediaRecorder internal error:', event.error);
             };
 
-            this.mediaRecorder.onstop = () => {
-                stream.getTracks().forEach(track => track.stop());
+           this.mediaRecorder.onstop = () => {
+           stream.getTracks().forEach(track => track.stop());
+
+                if (videoElement) {
+                  videoElement.pause();
+                  videoElement.srcObject = null;
+                }
 
                 if (this.recordedChunks.length === 0) {
                     console.error('Recording failed: No recorded chunks captured.');
@@ -94,10 +99,23 @@ const MediaController = {
                     return;
                 }
 
-                const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder.mimeType || 'video/webm' });
+                // Keep the container MIME type free of codec parameters.
+                // This avoids commas in the generated data URL header.
+               const recorderMimeType =
+                this.mediaRecorder?.mimeType ||
+                this.recordedChunks.find(chunk => chunk.type)?.type ||
+                 'video/webm';
+
+                  const containerMimeType =
+                recorderMimeType.split(';', 1)[0].trim().toLowerCase();
+
+                const blob = new Blob(this.recordedChunks, {
+                  type: containerMimeType
+              });
+
                 const reader = new FileReader();
 
-                reader.onloadend = () => {
+               reader.onload = () => {
                     const attachment = { type: 'video', dataUrl: reader.result };
                     this.pendingAttachment = attachment;
                     if (onComplete) onComplete(attachment);
@@ -111,9 +129,9 @@ const MediaController = {
                 reader.readAsDataURL(blob);
             };
 
-            // CRITICAL FIX: Pass a 100ms timeslice to start() so chunks are continuously collected.
-            // This prevents empty chunks upon stop() in strict browsers.
-           this.mediaRecorder.start();
+            // Request periodic recording data approximately every 100 ms.
+            // Actual delivery timing depends on the browser.
+            this.mediaRecorder.start(100);
 
             // Use actual elapsed time for consistent recording duration.
             const recordingDurationMs = 3200;
@@ -149,7 +167,8 @@ const MediaController = {
             }
 
             if (videoElement) {
-                videoElement.srcObject = null;
+             videoElement.pause();
+             videoElement.srcObject = null;
             }
 
             alert(
