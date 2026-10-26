@@ -538,10 +538,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // Handle Note Input
-    heartNoteInput?.addEventListener('input', (e) => {
-        MediaController.setNoteAttachment(e.target.value);
-    });
+  // Preserve an existing photo or video when adding a note.
+heartNoteInput?.addEventListener('input', (e) => {
+    const text = e.target.value.trim();
+    const attachment = MediaController.pendingAttachment;
+
+    if (
+        attachment &&
+        (attachment.type === 'photo' ||
+         attachment.type === 'video')
+    ) {
+        if (text) {
+            attachment.note = text;
+        } else {
+            delete attachment.note;
+        }
+    } else {
+        MediaController.setNoteAttachment(text);
+    }
+});
 
     // Handle 3s Video Recording Trigger
     startRecorderBtn?.addEventListener('click', async () => {
