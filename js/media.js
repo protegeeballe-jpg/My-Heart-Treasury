@@ -7,20 +7,66 @@ const MediaController = {
     recordedChunks: [],
 
     async startThreeSecondRecording(videoElement, progressBarElement, onComplete) {
-        this.recordedChunks = [];
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            if (videoElement) videoElement.srcObject = stream;
+       this.recordedChunks = [];
+        let stream = null;
 
-            // Cross-browser MIME type negotiation (Fixes iOS Safari crash)
-            let options = { mimeType: 'video/webm;codecs=vp8' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                if (MediaRecorder.isTypeSupported('video/mp4')) {
-                    options = { mimeType: 'video/mp4' };
-                } else if (MediaRecorder.isTypeSupported('video/webm')) {
-                    options = { mimeType: 'video/webm' };
-                } else {
-                    options = {}; // Fallback to browser default
+        try {
+    if (typeof MediaRecorder === 'undefined') {
+        throw new Error('MediaRecorder is not supported in this browser.');
+    }
+            // Try to capture video and microphone audio.
+
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: true
+                });
+            } catch (audioError) {
+                console.warn(
+                    'Audio capture unavailable; trying video-only.',
+                    audioError
+                );
+
+                // Keep video recording available if audio fails.
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: true,
+                    audio: false
+                });
+
+                alert(
+                    'Microphone access is unavailable. ' +
+                    'This clip will be silent. Please check microphone permissions.'
+                );
+            }
+
+            if (videoElement) {
+                videoElement.srcObject = stream;
+            }
+
+            // Prefer a browser-supported format that can carry audio.
+            const mimeTypes = [
+                'video/mp4',
+                'video/webm;codecs=vp8,opus',
+                'video/webm;codecs=vp9,opus',
+                'video/webm'
+            ];
+
+            let options = {};
+
+            if (
+                typeof MediaRecorder !== 'undefined' &&
+                typeof MediaRecorder.isTypeSupported === 'function'
+            ) {
+                const supportedMimeType = mimeTypes.find(type => {
+                    try {
+                        return MediaRecorder.isTypeSupported(type);
+                    } catch {
+                        return false;
+                    }
+                });
+
+                if (supportedMimeType) {
+                    options = { mimeType: supportedMimeType };
                 }
             }
 
