@@ -172,7 +172,7 @@ const TreasuryStorage = {
         return await this.getDatabase(sessionPin);
     },
 
-    async saveDayEntry(dateKey, payload, sessionPin) {
+   async saveDayEntry(dateKey, payload, sessionPin) {
         try {
             await this.init();
             let db = await this.getDatabase(sessionPin);
@@ -180,12 +180,37 @@ const TreasuryStorage = {
                 db[dateKey] = { totalHearts: 0, entries: [] };
             }
             db[dateKey].totalHearts += payload.hearts;
+
+            const attachment = payload.attachment || {};
+
+            // Safely map photo or video media directly from the attachment payload
+            let media = null;
+            if (attachment.type === 'photo' || attachment.type === 'video') {
+                media = {
+                    type: attachment.type,
+                    dataUrl: attachment.dataUrl
+                };
+            }
+
+            // Safely extract notes (supporting standalone notes or notes attached to media)
+            let note = null;
+            if (attachment.type === 'note') {
+                note = attachment.text || null;
+            } else {
+                note = attachment.note || null;
+            }
+
             db[dateKey].entries.push({
-                timestamp: payload.attachment ? payload.attachment.timestamp : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                timestamp: attachment.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 hearts: payload.hearts,
-                note: payload.attachment ? payload.attachment.note : null,
-                media: payload.attachment ? payload.attachment.media : null
+                note: note,
+                media: media
             });
+
+            // Preserve root attachment/location metadata for calendar and map integration
+            if (payload.attachment) {
+                db[dateKey].attachment = payload.attachment;
+            }
 
             const pinCheck = await this.getPin();
             if (pinCheck) {
@@ -199,7 +224,7 @@ const TreasuryStorage = {
             alert(`Error saving to device storage: ${err.message}`);
         }
     },
-
+    
     async getPin() {
         try {
             await this.init();
