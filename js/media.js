@@ -7,27 +7,23 @@ const MediaController = {
     recordedChunks: [],
 
     async startThreeSecondRecording(videoElement, progressBarElement, onComplete) {
-       this.recordedChunks = [];
+        this.recordedChunks = [];
         let stream = null;
 
         try {
-    if (typeof MediaRecorder === 'undefined') {
-        throw new Error('MediaRecorder is not supported in this browser.');
-    }
-            // Try to capture video and microphone audio.
+            if (typeof MediaRecorder === 'undefined') {
+                throw new Error('MediaRecorder is not supported in this browser.');
+            }
 
+            // Try to capture video and microphone audio.
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
                     audio: true
                 });
             } catch (audioError) {
-                console.warn(
-                    'Audio capture unavailable; trying video-only.',
-                    audioError
-                );
+                console.warn('Audio capture unavailable; trying video-only.', audioError);
 
-                // Keep video recording available if audio fails.
                 stream = await navigator.mediaDevices.getUserMedia({
                     video: true,
                     audio: false
@@ -41,22 +37,23 @@ const MediaController = {
 
             if (videoElement) {
                 videoElement.srcObject = stream;
+                try {
+                    await videoElement.play();
+                } catch (playErr) {
+                    console.warn('Video preview autoplay failed:', playErr);
+                }
             }
 
-            // Prefer a browser-supported format that can carry audio.
+            // Prefer WebM/Opus codecs first as they have the highest MediaRecorder support across browsers.
             const mimeTypes = [
-                'video/mp4',
-                'video/webm;codecs=vp8,opus',
                 'video/webm;codecs=vp9,opus',
-                'video/webm'
+                'video/webm;codecs=vp8,opus',
+                'video/webm',
+                'video/mp4'
             ];
 
             let options = {};
-
-            if (
-                typeof MediaRecorder !== 'undefined' &&
-                typeof MediaRecorder.isTypeSupported === 'function'
-            ) {
+            if (typeof MediaRecorder.isTypeSupported === 'function') {
                 const supportedMimeType = mimeTypes.find(type => {
                     try {
                         return MediaRecorder.isTypeSupported(type);
@@ -70,13 +67,33 @@ const MediaController = {
                 }
             }
 
-            this.mediaRecorder = new MediaRecorder(stream, options);
+            // Safeguard instantiation in case options cause unsupported state
+            try {
+                this.mediaRecorder = new MediaRecorder(stream, options);
+            } catch (err) {
+                console.warn('Configured options failed, falling back to default MediaRecorder:', err);
+                this.mediaRecorder = new MediaRecorder(stream);
+            }
+
             this.mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) this.recordedChunks.push(e.data);
+                if (e.data && e.data.size > 0) {
+                    this.recordedChunks.push(e.data);
+                }
+            };
+
+            this.mediaRecorder.onerror = (event) => {
+                console.error('MediaRecorder internal error:', event.error);
             };
 
             this.mediaRecorder.onstop = () => {
                 stream.getTracks().forEach(track => track.stop());
+
+                if (this.recordedChunks.length === 0) {
+                    console.error('Recording failed: No recorded chunks captured.');
+                    if (onComplete) onComplete(null);
+                    return;
+                }
+
                 const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder.mimeType || 'video/webm' });
                 const reader = new FileReader();
 
@@ -94,10 +111,11 @@ const MediaController = {
                 reader.readAsDataURL(blob);
             };
 
-            this.mediaRecorder.start();
+            // CRITICAL FIX: Pass a 100ms timeslice to start() so chunks are continuously collected.
+            // This prevents empty chunks upon stop() in strict browsers.
+            this.mediaRecorder.start(100);
 
-           
-            // Use actual elapsed time for more consistent recording duration.
+            // Use actual elapsed time for consistent recording duration.
             const recordingDurationMs = 3200;
             const startedAt = performance.now();
 
@@ -122,7 +140,7 @@ const MediaController = {
                 }
             }, 50);
 
-        } catch(err) {
+        } catch (err) {
             console.error('Camera access error:', err);
             alert('Camera access denied, unsupported, or unavailable on this browser.');
             if (onComplete) onComplete(null);
@@ -130,7 +148,6 @@ const MediaController = {
     },
 
     readImageFile(file, onComplete) {
-        // SAFETY GUARD 1: Prevent crash if file is missing or undefined
         if (!file) {
             if (onComplete) onComplete(null);
             return;
@@ -176,7 +193,6 @@ const MediaController = {
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, width, height);
 
-                // Compress image to JPEG at 80% quality to eliminate storage bloat
                 const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
                 const attachment = { type: 'photo', dataUrl: dataUrl };
                 this.pendingAttachment = attachment;
