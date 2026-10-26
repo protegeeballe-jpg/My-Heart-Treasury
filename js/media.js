@@ -12,14 +12,26 @@ const MediaController = {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             if (videoElement) videoElement.srcObject = stream;
 
-            this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+            // Cross-browser MIME type negotiation (Fixes iOS Safari crash)
+            let options = { mimeType: 'video/webm;codecs=vp8' };
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                if (MediaRecorder.isTypeSupported('video/mp4')) {
+                    options = { mimeType: 'video/mp4' };
+                } else if (MediaRecorder.isTypeSupported('video/webm')) {
+                    options = { mimeType: 'video/webm' };
+                } else {
+                    options = {}; // Fallback to browser default
+                }
+            }
+
+            this.mediaRecorder = new MediaRecorder(stream, options);
             this.mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) this.recordedChunks.push(e.data);
             };
 
             this.mediaRecorder.onstop = () => {
                 stream.getTracks().forEach(track => track.stop());
-                const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+                const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder.mimeType || 'video/webm' });
                 const reader = new FileReader();
 
                 reader.onloadend = () => {
@@ -46,12 +58,14 @@ const MediaController = {
 
                 if (elapsed >= 3000) {
                     clearInterval(interval);
-                    this.mediaRecorder.stop();
+                    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                        this.mediaRecorder.stop();
+                    }
                 }
             }, 100);
         } catch(err) {
             console.error('Camera access error:', err);
-            alert('Camera access denied or unavailable.');
+            alert('Camera access denied, unsupported, or unavailable on this browser.');
             if (onComplete) onComplete(null);
         }
     },
