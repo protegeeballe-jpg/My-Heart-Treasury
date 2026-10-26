@@ -159,7 +159,7 @@ const MediaController = {
 
             if (onComplete) onComplete(null);
         }
-
+    },
     readImageFile(file, onComplete) {
         if (!file) {
             if (onComplete) onComplete(null);
