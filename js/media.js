@@ -113,7 +113,7 @@ const MediaController = {
 
             // CRITICAL FIX: Pass a 100ms timeslice to start() so chunks are continuously collected.
             // This prevents empty chunks upon stop() in strict browsers.
-            this.mediaRecorder.start(100);
+           this.mediaRecorder.start();
 
             // Use actual elapsed time for consistent recording duration.
             const recordingDurationMs = 3200;
@@ -140,12 +140,25 @@ const MediaController = {
                 }
             }, 50);
 
-        } catch (err) {
-            console.error('Camera access error:', err);
-            alert('Camera access denied, unsupported, or unavailable on this browser.');
+               } catch (err) {
+            console.error('Video recording setup failed:', err);
+
+            // Release camera and microphone if setup fails.
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+
+            if (videoElement) {
+                videoElement.srcObject = null;
+            }
+
+            alert(
+                'Unable to start recording. Please check camera ' +
+                'and microphone permissions, then try again.'
+            );
+
             if (onComplete) onComplete(null);
         }
-    },
 
     readImageFile(file, onComplete) {
         if (!file) {
