@@ -15,17 +15,21 @@ const MediaController = {
                 throw new Error('MediaRecorder is not supported in this browser.');
             }
 
-            // Try to capture video and microphone audio.
+            // Shrink resolution slightly for a lighter, faster recording
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+                    video: { 
+                        width: { ideal: 640 }, 
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 30 }
+                    },
                     audio: true
                 });
-            } catch (audioError) {
+           } catch (audioError) {
                 console.warn('Audio capture unavailable; trying video-only.', audioError);
 
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
+                    video: { width: { ideal: 640 }, height: { ideal: 480 } },
                     audio: false
                 });
 
@@ -63,7 +67,12 @@ const MediaController = {
                 });
 
                 if (supportedMimeType) {
-                    options = { mimeType: supportedMimeType };
+                    // AUTO-COMPRESSOR: Limit bitrate to 800kbps (Keeps video looking great, 
+                    // but shrinks the file size down to a lightweight few hundred kilobytes!)
+                    options = { 
+                        mimeType: supportedMimeType,
+                        videoBitsPerSecond: 800000 
+                    };
                 }
             }
 
