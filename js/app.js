@@ -66,6 +66,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const bibleVersionSelect = document.getElementById('bibleVersionSelect');
         const bibleReaderContent = document.getElementById('bibleReaderContent');
         const vodText = document.getElementById('vodText');
+        const vodReference = document.getElementById('vodReference');
+        const vodVersionLabel = document.getElementById('vodVersionLabel');
         const attachVodBtn = document.getElementById('attachVodBtn');
         const attachSelectedVersesBtn = document.getElementById('attachSelectedVersesBtn');
         const downloadVerseImgBtn = document.getElementById('downloadVerseImgBtn');
@@ -110,7 +112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             pink: { backgroundColor: 'rgba(236, 72, 153, 0.20)', borderLeft: '3px solid #ec4899' }
         };
 
-        const selectClasses = 'w-full bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-rose-500';
+        const selectClasses = 'bible-control-select w-full bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-rose-500';
 
         function showReaderMessage(message, detail) {
             if (!bibleReaderContent) return;
@@ -131,7 +133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         function createSelectField(selectId, labelText) {
             const field = document.createElement('label');
-            field.className = 'flex flex-col gap-1 min-w-0';
+            field.className = 'bible-control-field flex flex-col gap-1 min-w-0';
 
             const label = document.createElement('span');
             label.className = 'text-[10px] text-slate-400 font-semibold uppercase tracking-wide';
@@ -153,10 +155,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
 
             // Add labels and the two navigation selectors without requiring an HTML-file change.
-            toolbar.className = 'grid grid-cols-1 sm:grid-cols-3 gap-2 py-3 border-b border-slate-800/60';
+            toolbar.className = 'bible-toolbar grid gap-2 py-2 border-b border-slate-800/60';
 
             const versionField = document.createElement('label');
-            versionField.className = 'flex flex-col gap-1 min-w-0';
+            versionField.className = 'bible-control-field bible-control-field--version flex flex-col gap-1 min-w-0';
             const versionLabel = document.createElement('span');
             versionLabel.className = 'text-[10px] text-slate-400 font-semibold uppercase tracking-wide';
             versionLabel.textContent = 'Translation';
@@ -356,36 +358,149 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         async function renderVerseOfDay() {
+            const selectedLabel = getSelectedVersionLabel();
+
+            function setAttachAvailability(available) {
+                if (!attachVodBtn) return;
+
+                attachVodBtn.disabled = !available;
+                attachVodBtn.setAttribute(
+                    'aria-disabled',
+                    String(!available)
+                );
+
+                attachVodBtn.classList.toggle(
+                    'opacity-50',
+                    !available
+                );
+
+                attachVodBtn.classList.toggle(
+                    'cursor-not-allowed',
+                    !available
+                );
+            }
+
+            function updateHomeVerse(reference, text, versionLabel) {
+                if (vodReference) {
+                    vodReference.textContent = reference;
+                }
+
+                if (vodText) {
+                    vodText.textContent = text;
+                }
+
+                if (vodVersionLabel) {
+                    vodVersionLabel.textContent = versionLabel;
+                }
+            }
+
             if (typeof BibleController.getVerseOfTheDay !== 'function') {
                 currentVerseOfDay = null;
-                if (vodText) vodText.textContent = 'Verse of the Day is unavailable.';
+
+                updateHomeVerse(
+                    'Verse unavailable',
+                    'The Verse of the Day service is unavailable.',
+                    selectedLabel
+                );
+
+                setAttachAvailability(false);
                 return null;
             }
 
             const requestToken = ++verseOfDayRequestToken;
             const versionId = BibleController.currentVersion;
-            if (vodText) vodText.textContent = `Loading today's verse from ${getSelectedVersionLabel()}...`;
+
+            updateHomeVerse(
+                'Loading...',
+                'Loading today’s Scripture...',
+                selectedLabel
+            );
+
+            setAttachAvailability(false);
 
             try {
-                const verseOfDay = await BibleController.getVerseOfTheDay(versionId);
-                if (requestToken !== verseOfDayRequestToken || versionId !== BibleController.currentVersion) return null;
-                if (!verseOfDay || typeof verseOfDay.text !== 'string' || !verseOfDay.text.trim() ||
-                    typeof verseOfDay.reference !== 'string' || !verseOfDay.reference.trim()) {
+                const verseOfDay =
+                    await BibleController.getVerseOfTheDay(versionId);
+
+                // Prevent an older request from overwriting a newer translation.
+                if (
+                    requestToken !== verseOfDayRequestToken ||
+                    versionId !== BibleController.currentVersion
+                ) {
+                    return null;
+                }
+
+                if (
+                    !verseOfDay ||
+                    typeof verseOfDay.reference !== 'string' ||
+                    !verseOfDay.reference.trim()
+                ) {
                     currentVerseOfDay = null;
-                    if (vodText) vodText.textContent = `No valid Verse of the Day is available in ${getSelectedVersionLabel()}.`;
+
+                    updateHomeVerse(
+                        'Verse unavailable',
+                        'Today’s shared Scripture could not be loaded.',
+                        selectedLabel
+                    );
+
+                    scheduleNextDailyVerseRefresh();
                     return null;
                 }
 
                 currentVerseOfDay = verseOfDay;
-                if (vodText) {
-                    vodText.textContent = `"${verseOfDay.text}" — ${verseOfDay.reference} (${getSelectedVersionLabel()})`;
+
+                // A reference may be valid even when its translation has no text.
+                if (
+                    typeof verseOfDay.text !== 'string' ||
+                    !verseOfDay.text.trim()
+                ) {
+                    updateHomeVerse(
+                        verseOfDay.reference,
+                        'Today’s shared verse is unavailable in this translation.',
+                        `${selectedLabel} · Text unavailable`
+                    );
+
+                    setAttachAvailability(false);
+                    scheduleNextDailyVerseRefresh();
+                    return verseOfDay;
                 }
+
+                // Display the selected translation's own wording.
+                updateHomeVerse(
+                    verseOfDay.reference,
+                    verseOfDay.text.trim(),
+                    selectedLabel
+                );
+
+                setAttachAvailability(true);
                 scheduleNextDailyVerseRefresh();
+
                 return verseOfDay;
+
             } catch (error) {
-                console.error('[BibleViewer] Verse-of-the-day retrieval failed:', error);
+                console.error(
+                    '[BibleViewer] Shared Verse-of-the-day retrieval failed:',
+                    error
+                );
+
+                if (
+                    requestToken !== verseOfDayRequestToken ||
+                    versionId !== BibleController.currentVersion
+                ) {
+                    return null;
+                }
+
                 currentVerseOfDay = null;
-                if (vodText) vodText.textContent = 'Unable to load the Verse of the Day from the selected translation.';
+
+                updateHomeVerse(
+                    'Verse unavailable',
+                    'Unable to load today’s Scripture from the selected translation.',
+                    selectedLabel
+                );
+
+                setAttachAvailability(false);
+                scheduleNextDailyVerseRefresh();
+
                 return null;
             }
         }
@@ -753,9 +868,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         setupBibleNavigationControls();
         populateBibleVersions();
+
+        // Load the shared Verse of the Day on the main Treasury screen.
+        void renderVerseOfDay();
         document.addEventListener('visibilitychange', () => {
-            // Refresh only after the Bible feature has already been opened once;
-            // this keeps the reader's translation JSON lazy-loaded at app startup.
+             // Refresh the home-screen Verse of the Day when the app becomes visible.
+            // This also helps update the verse when the app resumes after midnight.
             if (!document.hidden && currentVerseOfDay) renderVerseOfDay();
         });
 
