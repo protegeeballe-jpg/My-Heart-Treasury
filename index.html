@@ -202,22 +202,115 @@
                 <!-- Dynamic Scripture verses -->
             </div>
 
-            <!-- Action Footer -->
-            <div class="bible-reader-footer border-t border-slate-800 pt-3 flex justify-between items-center text-xs">
-                <span id="bibleReadingReference" class="text-slate-400 font-medium">Genesis 1</span>
-                <div class="flex gap-2">
-                    <button id="downloadVerseImgBtn" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-rose-300 rounded-xl font-semibold flex items-center gap-1.5 border border-slate-700">
-                        <i data-lucide="image" class="w-3.5 h-3.5"></i> Download Image
-                    </button>
-                    <button id="attachSelectedVersesBtn" class="px-3.5 py-2 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-semibold flex items-center gap-1.5 shadow">
-                        <i data-lucide="heart" class="w-3.5 h-3.5"></i> Attach to Deposit
-                    </button>
-                </div>
-            </div>
+           
+<!-- Bible Reader Bottom Action Dock -->
+<div class="bible-reader-footer">
+
+    <div class="bible-footer-top">
+        <span id="bibleReadingReference"
+              class="text-slate-400 font-medium">
+            Genesis 1
+        </span>
+
+        <!-- Icon-only action dock -->
+        <div id="bibleActionDock"
+             class="bible-action-dock"
+             role="toolbar"
+             aria-label="Bible verse actions">
+
+            <button id="bibleHighlightBtn"
+                    type="button"
+                    class="bible-icon-action"
+                    aria-label="Highlight selected verses"
+                    title="Highlight">
+                <i data-lucide="highlighter"></i>
+            </button>
+
+            <button id="bibleBookmarkBtn"
+                    type="button"
+                    class="bible-icon-action"
+                    aria-label="Bookmark selected verses"
+                    title="Bookmark">
+                <i data-lucide="bookmark"></i>
+            </button>
+
+            <button id="bibleCopyBtn"
+                    type="button"
+                    class="bible-icon-action"
+                    aria-label="Copy selected verses"
+                    title="Copy">
+                <i data-lucide="copy"></i>
+            </button>
+
+            <button id="attachSelectedVersesBtn"
+                    type="button"
+                    class="bible-icon-action"
+                    aria-label="Attach selected verses to Heart Treasury"
+                    title="Attach to Heart">
+                <i data-lucide="heart"></i>
+            </button>
+
+            <button id="downloadVerseImgBtn"
+                    type="button"
+                    class="bible-icon-action"
+                    aria-label="Download selected verse as an image"
+                    title="Download verse image">
+                <i data-lucide="image"></i>
+            </button>
+
         </div>
     </div>
 
-    <!-- PIN Lock / Startup Modal -->
+    <!-- Small highlight palette; hidden until requested -->
+    <div id="bibleHighlightMenu"
+         class="bible-highlight-menu hidden">
+
+        <select id="bibleHighlightColorSelect"
+                class="bible-highlight-select"
+                aria-label="Choose highlight color">
+
+            <option value="yellow">Yellow</option>
+            <option value="green">Green</option>
+            <option value="blue">Blue</option>
+            <option value="pink">Pink</option>
+
+        </select>
+
+        <button id="applyBibleHighlightBtn"
+                type="button"
+                class="bible-icon-action"
+                aria-label="Apply highlight"
+                title="Apply highlight">
+            <i data-lucide="check"></i>
+        </button>
+
+        <button id="removeBibleHighlightBtn"
+                type="button"
+                class="bible-icon-action"
+                aria-label="Remove highlight"
+                title="Remove highlight">
+            <i data-lucide="eraser"></i>
+        </button>
+
+    </div>
+
+    <!-- Accessible status announcements -->
+    <span id="bibleHighlightStatus"
+          class="sr-only"
+          aria-live="polite"></span>
+
+    <span id="bibleSelectionStatus"
+          class="sr-only"
+          aria-live="polite"></span>
+
+</div>
+
+    </div> <!-- Closes bible-reader-footer -->
+
+</div> <!-- Closes modal-card -->
+</div> <!-- Closes bibleStudyModal -->
+
+<!-- PIN Lock / Startup Modal -->
     <div id="pinLockModal" class="fixed inset-0 bg-slate-950/90 z-50 flex items-center justify-center hidden">
         <div class="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-sm w-full text-center space-y-4 shadow-2xl">
             <div class="text-rose-400 text-3xl" id="pinIcon">🔒</div>

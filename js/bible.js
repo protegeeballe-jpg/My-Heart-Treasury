@@ -477,18 +477,34 @@ const BibleController = {
     },
     highlightColors: ['yellow', 'green', 'blue', 'pink'],
 
+   
+
     async _openHighlightDatabase() {
         if (typeof indexedDB === 'undefined') {
             throw new Error('This browser does not support IndexedDB.');
         }
 
         return new Promise((resolve, reject) => {
-            const request = indexedDB.open('myHeartTreasuryBibleHighlights', 1);
+            const request = indexedDB.open(
+                'myHeartTreasuryBibleHighlights',
+                2
+            );
 
             request.onupgradeneeded = () => {
                 const db = request.result;
+
+                // Preserve existing highlight records.
                 if (!db.objectStoreNames.contains('highlights')) {
-                    db.createObjectStore('highlights', { keyPath: 'id' });
+                    db.createObjectStore('highlights', {
+                        keyPath: 'id'
+                    });
+                }
+
+                // Add bookmarks without replacing highlights.
+                if (!db.objectStoreNames.contains('bookmarks')) {
+                    db.createObjectStore('bookmarks', {
+                        keyPath: 'id'
+                    });
                 }
             };
 
@@ -499,25 +515,40 @@ const BibleController = {
             };
 
             request.onerror = () => {
-                reject(request.error || new Error('Unable to open Bible highlight storage.'));
+                reject(
+                    request.error ||
+                    new Error('Unable to open Bible storage.')
+                );
+            };
+
+            request.onblocked = () => {
+                console.warn(
+                    '[BibleController] Database upgrade is waiting for another open connection.'
+                );
             };
         });
     },
 
     _makeHighlightRecord(versionId, book, chapter, verse, color) {
-        const versionExists = this.versions.some(item => item.id === versionId);
+        const versionExists = this.versions.some(
+            item => item.id === versionId
+        );
+
         const chapterNumber = Number(chapter);
         const verseNumber = Number(verse);
 
         if (!versionExists) {
             throw new TypeError('Unknown Bible translation.');
         }
+
         if (typeof book !== 'string' || !book.trim()) {
             throw new TypeError('A valid Bible book is required.');
         }
+
         if (!Number.isSafeInteger(chapterNumber) || chapterNumber < 1) {
             throw new TypeError('A valid chapter number is required.');
         }
+
         if (!Number.isSafeInteger(verseNumber) || verseNumber < 1) {
             throw new TypeError('A valid verse number is required.');
         }
@@ -527,9 +558,9 @@ const BibleController = {
 
         return {
             id: `${versionId}::${bookKey}::${chapterNumber}::${verseNumber}`,
-            versionId: versionId,
+            versionId,
             book: bookName,
-            bookKey: bookKey,
+            bookKey,
             chapter: chapterNumber,
             verse: verseNumber,
             color: color || null,
@@ -647,6 +678,198 @@ const BibleController = {
 
         return this._writeHighlightRecord(record, true);
     },
+
+_makeBookmarkRecord(versionId, book, chapter, verse) {
+    const versionExists = this.versions.some(
+        item => item.id === versionId
+    );
+
+    const chapterNumber = Number(chapter);
+    const verseNumber = Number(verse);
+
+    if (!versionExists) {
+        throw new TypeError('Unknown Bible translation.');
+    }
+
+    if (typeof book !== 'string' || !book.trim()) {
+        throw new TypeError('A valid Bible book is required.');
+    }
+
+    if (!Number.isSafeInteger(chapterNumber) || chapterNumber < 1) {
+        throw new TypeError('A valid chapter number is required.');
+    }
+
+    if (!Number.isSafeInteger(verseNumber) || verseNumber < 1) {
+        throw new TypeError('A valid verse number is required.');
+    }
+
+    const bookName = book.trim();
+    const bookKey = bookName.toLocaleUpperCase();
+
+    return {
+        id: `${versionId}::${bookKey}::${chapterNumber}::${verseNumber}`,
+        versionId,
+        book: bookName,
+        bookKey,
+        chapter: chapterNumber,
+        verse: verseNumber,
+        createdAt: Date.now()
+    };
+},
+
+async getChapterBookmarks(versionId, book, chapter) {
+    const target = this._makeBookmarkRecord(
+        versionId, book, chapter, 1
+    );
+
+    const db = await this._openHighlightDatabase();
+
+    return new Promise((resolve, reject) => {
+        const bookmarks = Object.create(null);
+        let transaction;
+
+        try {
+            transaction = db.transaction('bookmarks', 'readonly');
+
+            const request = transaction
+                .objectStore('bookmarks')
+                .getAll();
+
+            request.onsuccess = () => {
+                (request.result || []).forEach(record => {
+                    if (
+                        record.versionId === target.versionId &&
+                        record.bookKey === target.bookKey &&
+                        record.chapter === target.chapter
+                    ) {
+                        bookmarks[record.verse] = true;
+                    }
+                });
+            };
+        } catch (error) {
+            db.close();
+            reject(error);
+            return;
+        }
+
+        transaction.oncomplete = () => {
+            db.close();
+            resolve(bookmarks);
+        };
+
+        transaction.onerror = () => {
+            const error =
+                transaction.error ||
+                new Error('Unable to read Bible bookmarks.');
+
+            db.close();
+            reject(error);
+        };
+
+        transaction.onabort = () => {
+            const error =
+                transaction.error ||
+                new Error('Reading Bible bookmarks was interrupted.');
+
+            db.close();
+            reject(error);
+        };
+    });
+},
+
+async saveBookmark(versionId, book, chapter, verse) {
+    const record = this._makeBookmarkRecord(
+        versionId, book, chapter, verse
+    );
+
+    const db = await this._openHighlightDatabase();
+
+    return new Promise((resolve, reject) => {
+        let transaction;
+
+        try {
+            transaction = db.transaction('bookmarks', 'readwrite');
+
+            transaction
+                .objectStore('bookmarks')
+                .put(record);
+        } catch (error) {
+            db.close();
+            reject(error);
+            return;
+        }
+
+        transaction.oncomplete = () => {
+            db.close();
+            resolve(true);
+        };
+
+        transaction.onerror = () => {
+            const error =
+                transaction.error ||
+                new Error('Bookmark could not be saved.');
+
+            db.close();
+            reject(error);
+        };
+
+        transaction.onabort = () => {
+            const error =
+                transaction.error ||
+                new Error('Saving the bookmark was interrupted.');
+
+            db.close();
+            reject(error);
+        };
+    });
+},
+
+async removeBookmark(versionId, book, chapter, verse) {
+    const record = this._makeBookmarkRecord(
+        versionId, book, chapter, verse
+    );
+
+    const db = await this._openHighlightDatabase();
+
+    return new Promise((resolve, reject) => {
+        let transaction;
+
+        try {
+            transaction = db.transaction('bookmarks', 'readwrite');
+
+            transaction
+                .objectStore('bookmarks')
+                .delete(record.id);
+        } catch (error) {
+            db.close();
+            reject(error);
+            return;
+        }
+
+        transaction.oncomplete = () => {
+            db.close();
+            resolve(true);
+        };
+
+        transaction.onerror = () => {
+            const error =
+                transaction.error ||
+                new Error('Bookmark could not be removed.');
+
+            db.close();
+            reject(error);
+        };
+
+        transaction.onabort = () => {
+            const error =
+                transaction.error ||
+                new Error('Removing the bookmark was interrupted.');
+
+            db.close();
+            reject(error);
+        };
+    });
+},
     generateVerseImage(verseText, reference, versionLabel) {
         const canvas = document.createElement('canvas');
         canvas.width = 1080;
