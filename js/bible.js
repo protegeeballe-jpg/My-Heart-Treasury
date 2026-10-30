@@ -67,9 +67,10 @@ const BibleController = {
             return this.cache[versionId];
         }
 
+        // Cleaned up: safely queries the versions array directly without the broken nested reference
         const versionObj = this.versions.find(v => v.id === versionId) || this.versions[0];
         try {
-            const response = await fetch(`./bible/${versionObj.file}`);
+            const response = await fetch(`bible/${versionObj.file}`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
             this.cache[versionId] = data;
@@ -79,6 +80,34 @@ const BibleController = {
             return null;
         }
     },
+
+    // --- BULLETPROOF FLAT-ARRAY HELPERS (Defensive Programming Enabled) ---
+    async getChapter(versionId, book, chapter) {
+        const data = await this.getVersionData(versionId);
+        if (!data || !Array.isArray(data)) return [];
+        return data.filter(item => 
+            item && 
+            typeof item.book === 'string' && 
+            item.book.toUpperCase() === book.toUpperCase() && 
+            Number(item.chapter) === Number(chapter)
+        );
+    },
+
+    async getBooks(versionId) {
+        const data = await this.getVersionData(versionId);
+        if (!data || !Array.isArray(data)) return [];
+        return [...new Set(data.map(item => item && item.book).filter(Boolean))];
+    },
+
+    async getChapters(versionId, book) {
+        const data = await this.getVersionData(versionId);
+        if (!data || !Array.isArray(data)) return [];
+        return [...new Set(data
+            .filter(item => item && typeof item.book === 'string' && item.book.toUpperCase() === book.toUpperCase())
+            .map(item => item.chapter))]
+            .sort((a, b) => a - b);
+    },
+    // ---------------------------------------------------------------------
 
     getVerseOfTheDay() {
         return {
@@ -128,7 +157,7 @@ const BibleController = {
             const testLine = line + words[n] + ' ';
             const metrics = context.measureText(testLine);
             const testWidth = metrics.width;
-            if (testWidth > maxWidth && n > 0) { // <-- Bug fixed here (removed accidental backticks)
+            if (testWidth > maxWidth && n > 0) {
                 context.fillText(line, x, y);
                 line = words[n] + ' ';
                 y += lineHeight;
