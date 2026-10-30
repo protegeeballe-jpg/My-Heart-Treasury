@@ -1,4 +1,3 @@
-
 /**
  * Bible Study Controller for My Heart Treasury
  * Optimized with Lazy-Loading to preserve zero-impact performance on core app state.
@@ -60,12 +59,12 @@ const BibleController = {
         { id: 'swedish', name: 'Swedish Bible', lang: 'Swedish', file: 'swedish.json' }
     ],
 
-    cache: {}, // Dynamic lazy-load memory cache
+    cache: {},
     currentVersion: 'english_web',
 
     async getVersionData(versionId) {
         if (this.cache[versionId]) {
-            return this.cache[versionId]; // Return instantly from memory if already loaded
+            return this.cache[versionId];
         }
 
         const versionObj = this.versions.find(v => v.id === versionId) || this.versions[0];
@@ -73,7 +72,7 @@ const BibleController = {
             const response = await fetch(`./bible/${versionObj.file}`);
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const data = await response.json();
-            this.cache[versionId] = data; // Cache only when requested
+            this.cache[versionId] = data;
             return data;
         } catch (err) {
             console.error(`Failed to load version ${versionId}:`, err);
@@ -94,34 +93,28 @@ const BibleController = {
         canvas.height = 1080;
         const ctx = canvas.getContext('2d');
 
-        // Background Gradient
         const gradient = ctx.createLinearGradient(0, 0, 1080, 1080);
         gradient.addColorStop(0, '#0f172a');
         gradient.addColorStop(1, '#1e293b');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 1080, 1080);
 
-        // Accent Border
         ctx.strokeStyle = '#f43f5e';
         ctx.lineWidth = 8;
         ctx.strokeRect(60, 60, 960, 960);
 
-        // Header
         ctx.fillStyle = '#f43f5e';
         ctx.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
         ctx.fillText("MY HEART TREASURY • BIBLE STUDY", 100, 140);
 
-        // Verse Text
         ctx.fillStyle = '#f8fafc';
         ctx.font = '42px "Plus Jakarta Sans", sans-serif';
         this._wrapText(ctx, `"${verseText}"`, 100, 280, 880, 60);
 
-        // Reference & Version
         ctx.fillStyle = '#cbd5e1';
         ctx.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
         ctx.fillText(`${reference} (${versionLabel})`, 100, 920);
 
-        // Trigger Download
         const link = document.createElement('a');
         link.download = `bible_verse_${reference.replace(/\s+/g, '_')}.png`;
         link.href = canvas.toDataURL('image/png');
@@ -135,7 +128,7 @@ const BibleController = {
             const testLine = line + words[n] + ' ';
             const metrics = context.measureText(testLine);
             const testWidth = metrics.width;
-            if (testWidth > maxWidth && n > 0) {
+            if (testWidth > maxWidth && n > `0`) {
                 context.fillText(line, x, y);
                 line = words[n] + ' ';
                 y += lineHeight;
