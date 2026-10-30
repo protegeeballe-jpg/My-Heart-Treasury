@@ -128,7 +128,7 @@ const BibleController = {
             const testLine = line + words[n] + ' ';
             const metrics = context.measureText(testLine);
             const testWidth = metrics.width;
-            if (testWidth > maxWidth && n > `0`) {
+            if (testWidth > maxWidth && n > 0) { // <-- Bug fixed here (removed accidental backticks)
                 context.fillText(line, x, y);
                 line = words[n] + ' ';
                 y += lineHeight;
