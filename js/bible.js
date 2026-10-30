@@ -216,35 +216,100 @@ const BibleController = {
         return Array.from(chapters).sort((a, b) => a - b);
     },
 
-      /**
-     * Select a real verse from the requested translation.
-     * The selection is stable for the local calendar day and changes daily.
+        /**
+     * Shared Verse of the Day — Option B.
+     *
+     * English WEB supplies the common reference sequence.
+     * Every translation uses the same selected record position.
+     * Each translation supplies its own book name and Scripture wording.
+     * No alternative translation is used when a verse is unavailable.
      */
     async getVerseOfTheDay(versionId = this.currentVersion) {
-        const version = this.versions.find(item => item.id === versionId);
+        const version = this.versions.find(
+            item => item.id === versionId
+        );
+
         if (!version) return null;
 
-        const data = await this.getVersionData(versionId);
-        if (!Array.isArray(data)) return null;
+        // Load the fixed reference sequence.
+        const referenceData = await this.getVersionData('english_web');
 
-        const candidates = data.filter(record =>
-            record &&
-            typeof record.book === 'string' &&
-            record.book.trim() &&
-            Number.isSafeInteger(Number(record.chapter)) &&
-            Number(record.chapter) > 0 &&
-            Number.isSafeInteger(Number(record.verse)) &&
-            Number(record.verse) > 0 &&
-            typeof record.text === 'string' &&
-            record.text.trim()
-        );
+        if (!Array.isArray(referenceData) || referenceData.length === 0) {
+            return null;
+        }
+
+        // Load the requested translation separately.
+        const selectedData = versionId === 'english_web'
+            ? referenceData
+            : await this.getVersionData(versionId);
+
+        if (!Array.isArray(selectedData)) return null;
+
+        /*
+         * Build the daily candidates from WEB.
+         * The original record indexes are preserved.
+         * Book ordinal handles localized book names.
+         */
+        const candidates = [];
+
+        let previousBook = null;
+        let bookOrdinal = -1;
+
+        for (let index = 0; index < referenceData.length; index += 1) {
+            const record = referenceData[index];
+
+            if (
+                !record ||
+                typeof record.book !== 'string' ||
+                !record.book.trim()
+            ) {
+                return null;
+            }
+
+            const currentBook = record.book.trim().toLocaleUpperCase();
+
+            if (currentBook !== previousBook) {
+                bookOrdinal += 1;
+                previousBook = currentBook;
+            }
+
+            const chapter = Number(record.chapter);
+            const verse = Number(record.verse);
+
+            if (
+                Number.isSafeInteger(chapter) &&
+                chapter > 0 &&
+                Number.isSafeInteger(verse) &&
+                verse > 0 &&
+                typeof record.text === 'string' &&
+                record.text.trim()
+            ) {
+                candidates.push({
+                    index,
+                    bookOrdinal,
+                    chapter,
+                    verse,
+                    referenceRecord: record
+                });
+            }
+        }
 
         if (candidates.length === 0) return null;
 
-        // Create a stable translation-specific sequence of daily verses.
+        /*
+         * Use one fixed seed for every translation.
+         * The selected verse therefore depends on the date,
+         * never on the selected translation ID.
+         */
+        const seedText = 'MyHeartTreasury:SharedVerseOfTheDay:v1';
+
         let hash = 2166136261;
-        for (let i = 0; i < versionId.length; i += 1) {
-            hash = Math.imul(hash ^ versionId.charCodeAt(i), 16777619);
+
+        for (let i = 0; i < seedText.length; i += 1) {
+            hash = Math.imul(
+                hash ^ seedText.charCodeAt(i),
+                16777619
+            );
         }
 
         const seed = hash >>> 0;
@@ -256,35 +321,160 @@ const BibleController = {
                 a = b;
                 b = remainder;
             }
+
             return a;
         };
 
+        // Choose a step that visits every candidate before repeating.
         let step = (seed % count) || 1;
+
         while (gcd(step, count) !== 1) {
             step += 1;
-            if (step >= count) step = 1;
+
+            if (step >= count) {
+                step = 1;
+            }
         }
 
-        const offset = seed % count;
+        const offset = (seed >>> 16) % count;
+
+        // Use the user's local calendar date.
         const today = new Date();
+
         const dayNumber = Math.floor(
-            Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 86400000
+            Date.UTC(
+                today.getFullYear(),
+                today.getMonth(),
+                today.getDate()
+            ) / 86400000
         );
 
-        const index = (((dayNumber % count) * step) + offset) % count;
-        const selected = candidates[index];
+        const dailyIndex =
+            (((dayNumber % count) * step) + offset) % count;
 
+        const selectedCandidate = candidates[dailyIndex];
+
+        const {
+            index: recordIndex,
+            bookOrdinal: referenceBookOrdinal,
+            chapter,
+            verse,
+            referenceRecord
+        } = selectedCandidate;
+
+        const referenceKey =
+            `${referenceBookOrdinal}:${chapter}:${verse}`;
+
+        const webReference =
+            `${referenceRecord.book.trim()} ${chapter}:${verse}`;
+
+        // Validate the book/chapter/verse position in another translation.
+        const getBookOrdinalAt = (records, targetIndex) => {
+            if (
+                !Array.isArray(records) ||
+                !Number.isSafeInteger(targetIndex) ||
+                targetIndex < 0 ||
+                targetIndex >= records.length
+            ) {
+                return -1;
+            }
+
+            let ordinal = -1;
+            let previous = null;
+
+            for (let i = 0; i <= targetIndex; i += 1) {
+                const record = records[i];
+
+                if (
+                    !record ||
+                    typeof record.book !== 'string' ||
+                    !record.book.trim()
+                ) {
+                    return -1;
+                }
+
+                const current = record.book
+                    .trim()
+                    .toLocaleUpperCase();
+
+                if (current !== previous) {
+                    ordinal += 1;
+                    previous = current;
+                }
+            }
+
+            return ordinal;
+        };
+
+        // A consistent unavailable response preserves the shared reference.
+        const unavailable = {
+            reference: webReference,
+            text: null,
+            referenceKey,
+            available: false,
+            versionId,
+            versionName: version.name
+        };
+
+        // Never assume two different-length files have matching positions.
+        if (selectedData.length !== referenceData.length) {
+            console.warn(
+                `[BibleController] Record-count mismatch for ${versionId}.`
+            );
+
+            return unavailable;
+        }
+
+        // Retrieve the same record position from the selected translation.
+        const selectedRecord = selectedData[recordIndex];
+
+        if (
+            !selectedRecord ||
+            typeof selectedRecord.book !== 'string' ||
+            !selectedRecord.book.trim()
+        ) {
+            return unavailable;
+        }
+
+        const selectedBookOrdinal =
+            getBookOrdinalAt(selectedData, recordIndex);
+
+        const isSameReference =
+            selectedBookOrdinal === referenceBookOrdinal &&
+            Number(selectedRecord.chapter) === chapter &&
+            Number(selectedRecord.verse) === verse;
+
+        if (!isSameReference) {
+            console.warn(
+                `[BibleController] Reference alignment failed for ${versionId}.`
+            );
+
+            return unavailable;
+        }
+
+        const localizedReference =
+            `${selectedRecord.book.trim()} ${chapter}:${verse}`;
+
+        if (
+            typeof selectedRecord.text !== 'string' ||
+            !selectedRecord.text.trim()
+        ) {
+            return {
+                ...unavailable,
+                reference: localizedReference
+            };
+        }
+
+        // Return the exact wording from the user's selected translation.
         return {
-            reference: `${selected.book.trim()} ${Number(selected.chapter)}:${Number(selected.verse)}`,
-            text: selected.text,
-            versionId: versionId,
+            reference: localizedReference,
+            text: selectedRecord.text,
+            referenceKey,
+            available: true,
+            versionId,
             versionName: version.name
         };
     },
-
-    /**
-     * Highlight colors and storage are separate from Treasury records.
-     */
     highlightColors: ['yellow', 'green', 'blue', 'pink'],
 
     async _openHighlightDatabase() {
