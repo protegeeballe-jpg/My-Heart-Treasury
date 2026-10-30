@@ -113,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-async function loadAndRenderChapter(book, chapter, versionId) {
+    async function loadAndRenderChapter(book, chapter, versionId) {
         if (!bibleReaderContent) return;
         bibleReaderContent.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">Loading scripture for ${versionId}...</p>`;
 
@@ -142,39 +142,39 @@ async function loadAndRenderChapter(book, chapter, versionId) {
             let versesFound = null;
             const targetChapter = parseInt(chapter, 10) || 1;
 
-            // 1. If data is an array of books
-            if (Array.isArray(data)) {
-                const bookMatch = data.find(b => 
-                    (b.name && b.name.toLowerCase() === book.toLowerCase()) || 
-                    (b.book && b.book.toLowerCase() === book.toLowerCase()) ||
-                    (b.abbrev && b.abbrev.toLowerCase() === book.toLowerCase())
-                ) || data[0];
-
-                if (bookMatch) {
-                    const chIndex = targetChapter - 1;
-                    if (bookMatch.chapters && Array.isArray(bookMatch.chapters)) {
-                        versesFound = bookMatch.chapters[chIndex] || bookMatch.chapters[0];
-                    } else if (bookMatch[targetChapter]) {
-                        versesFound = bookMatch[targetChapter];
+            // Universal recursive helper to extract verses from any known JSON schema
+            function extractVerses(target) {
+                if (!target) return null;
+                if (Array.isArray(target)) return target;
+                if (typeof target === 'object') {
+                    if (target.chapters) {
+                        return extractVerses(target.chapters[targetChapter - 1] || target.chapters[targetChapter]);
+                    }
+                    if (target[targetChapter]) {
+                        return extractVerses(target[targetChapter]);
+                    }
+                    if (target['1'] || target[1]) {
+                        return target;
+                    }
+                    const values = Object.values(target);
+                    if (values.length > 0) {
+                        if (Array.isArray(values[0])) {
+                            return values[targetChapter - 1] || values[0];
+                        }
+                        return values;
                     }
                 }
+                return null;
+            }
+
+            // 1. If data is a direct chapter map or array
+            if (data[targetChapter] || data.chapters || Array.isArray(data)) {
+                versesFound = extractVerses(data);
             } 
             // 2. If data is an object with book keys
             else if (typeof data === 'object' && data !== null) {
                 const bookKey = Object.keys(data).find(k => k.toLowerCase() === book.toLowerCase()) || Object.keys(data)[0];
-                const bookContent = data[bookKey];
-
-                if (bookContent) {
-                    if (bookContent.chapters && Array.isArray(bookContent.chapters)) {
-                        versesFound = bookContent.chapters[targetChapter - 1] || bookContent.chapters[targetChapter];
-                    } else if (bookContent[targetChapter]) {
-                        versesFound = bookContent[targetChapter];
-                    } else if (Array.isArray(bookContent)) {
-                        versesFound = bookContent[targetChapter - 1];
-                    } else {
-                        versesFound = bookContent;
-                    }
-                }
+                versesFound = extractVerses(data[bookKey]);
             }
 
             // Render verses dynamically whether stored as an Array or Object map
@@ -712,24 +712,24 @@ async function loadAndRenderChapter(book, chapter, versionId) {
     });
 
   // Preserve an existing photo or video when adding a note.
-heartNoteInput?.addEventListener('input', (e) => {
-    const text = e.target.value.trim();
-    const attachment = MediaController.pendingAttachment;
+    heartNoteInput?.addEventListener('input', (e) => {
+        const text = e.target.value.trim();
+        const attachment = MediaController.pendingAttachment;
 
-    if (
-        attachment &&
-        (attachment.type === 'photo' ||
-         attachment.type === 'video')
-    ) {
-        if (text) {
-            attachment.note = text;
+        if (
+            attachment &&
+            (attachment.type === 'photo' ||
+             attachment.type === 'video')
+        ) {
+            if (text) {
+                attachment.note = text;
+            } else {
+                delete attachment.note;
+            }
         } else {
-            delete attachment.note;
+            MediaController.setNoteAttachment(text);
         }
-    } else {
-        MediaController.setNoteAttachment(text);
-    }
-});
+    });
 
     // Handle 3s Video Recording Trigger
     startRecorderBtn?.addEventListener('click', async () => {
