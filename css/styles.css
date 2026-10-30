@@ -423,3 +423,297 @@ button, label {
     letter-spacing: normal;
     font-size: 1rem;
 }
+
+
+/* ==========================================
+   BIBLE READER — ACCESSIBILITY & RESPONSIVE LAYOUT
+   All rules are scoped to #bibleStudyModal.
+   ========================================== */
+
+/* Give the Bible modal more usable room without changing other modals. */
+#bibleStudyModal.modal-backdrop {
+    padding: 0.75rem;
+    align-items: center;
+}
+
+#bibleStudyModal .modal-card {
+    width: min(100%, 56rem);
+    max-width: 56rem;
+    height: 90vh;
+    height: 90dvh;
+    max-height: calc(100vh - 1.5rem);
+    max-height: calc(100dvh - 1.5rem);
+    min-height: 0;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Compact, readable header. */
+#bibleStudyModal .modal-header {
+    flex: 0 0 auto;
+    margin-bottom: 0.65rem;
+    gap: 0.5rem;
+}
+
+#bibleStudyModal .modal-header h3 {
+    font-size: 1rem;
+    line-height: 1.35;
+}
+
+#bibleStudyModal .modal-close-btn {
+    width: 2.75rem;
+    height: 2.75rem;
+    flex: 0 0 2.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.65rem;
+}
+
+/* Translation, Book and Chapter controls. */
+#bibleStudyModal .bible-toolbar {
+    display: grid;
+    grid-template-columns:
+        minmax(0, 1.35fr)
+        minmax(0, 1fr)
+        minmax(0, 0.75fr);
+    align-items: end;
+    gap: 0.65rem;
+    padding-block: 0.65rem;
+    flex: 0 0 auto;
+}
+
+#bibleStudyModal .bible-control-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+#bibleStudyModal .bible-control-field > span {
+    font-size: 0.68rem;
+    line-height: 1.2;
+    letter-spacing: 0.07em;
+}
+
+#bibleStudyModal .bible-control-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 0.5rem 0.65rem;
+    font-size: 16px;
+    line-height: 1.25;
+    border-radius: 0.65rem;
+}
+
+#bibleStudyModal select:focus-visible,
+#bibleStudyModal button:focus-visible,
+#bibleStudyModal input:focus-visible {
+    outline: 2px solid #fb7185;
+    outline-offset: 2px;
+}
+
+/* The Scripture pane occupies the remaining modal height
+   and scrolls independently from the header and footer. */
+#bibleStudyModal #bibleReaderContent {
+    flex: 1 1 auto;
+    flex-basis: 0;
+    min-height: 0;
+    max-height: none;
+    margin-block: 0.6rem;
+    padding: 0.25rem 0.4rem 0.75rem 0.1rem;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y pinch-zoom;
+    scrollbar-width: thin;
+    scrollbar-color: #475569 transparent;
+    font-size: 1rem;
+}
+
+/* Larger chapter heading and readable guidance. */
+#bibleStudyModal #bibleReaderContent > h4 {
+    font-size: 1.05rem;
+    line-height: 1.4;
+    margin-bottom: 0.55rem;
+}
+
+#bibleStudyModal #bibleReaderContent > p {
+    font-size: 0.78rem;
+    line-height: 1.5;
+}
+
+/* Scripture verse rows: larger text and comfortable selection areas. */
+#bibleStudyModal #bibleReaderContent > label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    margin-block: 0.2rem;
+    padding: 0.65rem 0.5rem;
+    font-size: clamp(1.05rem, 2.2vw, 1.15rem);
+    line-height: 1.75;
+    color: #e2e8f0;
+    overflow-wrap: anywhere;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.10);
+    border-radius: 0.5rem;
+}
+
+#bibleStudyModal #bibleReaderContent > label:focus-within {
+    outline: 2px solid rgba(251, 113, 133, 0.7);
+    outline-offset: 2px;
+}
+
+#bibleStudyModal #bibleReaderContent > label input[type="checkbox"] {
+    width: 1.15rem;
+    height: 1.15rem;
+    min-width: 1.15rem;
+    margin-top: 0.4rem;
+    flex: 0 0 auto;
+    accent-color: #f43f5e;
+}
+
+#bibleStudyModal #bibleReaderContent > label strong {
+    font-size: 0.9em;
+}
+
+/* Highlight controls remain compact but easier to operate. */
+#bibleStudyModal #bibleReaderContent > div {
+    gap: 0.45rem;
+}
+
+#bibleStudyModal #bibleReaderContent > div select,
+#bibleStudyModal #bibleReaderContent > div button {
+    min-height: 40px;
+    font-size: 0.75rem;
+}
+
+#bibleStudyModal #bibleReaderContent > div button {
+    padding: 0.5rem 0.7rem;
+}
+
+/* Footer actions. */
+#bibleStudyModal .bible-reader-footer {
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    padding-top: 0.7rem;
+}
+
+#bibleStudyModal .bible-reader-footer > span {
+    min-width: 0;
+    font-size: 0.78rem;
+}
+
+#bibleStudyModal .bible-reader-footer > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+#bibleStudyModal #downloadVerseImgBtn,
+#bibleStudyModal #attachSelectedVersesBtn {
+    min-height: 44px;
+    padding: 0.55rem 0.75rem;
+    justify-content: center;
+    font-size: 0.75rem;
+    line-height: 1.25;
+}
+
+/* Mobile layout. */
+@media (max-width: 640px) {
+    #bibleStudyModal.modal-backdrop {
+        padding: 0.4rem;
+    }
+
+    #bibleStudyModal .modal-card {
+        width: 100%;
+        height: 96vh;
+        height: 96dvh;
+        max-height: calc(100vh - 0.8rem);
+        max-height: calc(100dvh - 0.8rem);
+        padding: 0.75rem;
+        border-radius: 0.9rem;
+    }
+
+    /* Translation gets its own row; Book and Chapter share the next row. */
+    #bibleStudyModal .bible-toolbar {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+        gap: 0.5rem;
+        padding-block: 0.55rem;
+    }
+
+    #bibleStudyModal .bible-control-field--version {
+        grid-column: 1 / -1;
+    }
+
+    #bibleStudyModal .bible-control-select {
+        min-height: 44px;
+        padding-inline: 0.55rem;
+    }
+
+    #bibleStudyModal #bibleReaderContent {
+        padding-right: 0.2rem;
+    }
+
+    #bibleStudyModal #bibleReaderContent > label {
+        font-size: 1.05rem;
+        line-height: 1.7;
+        padding-block: 0.65rem;
+    }
+
+    /* Put the chapter reference above two compact footer actions. */
+    #bibleStudyModal .bible-reader-footer {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.5rem;
+        padding-top: 0.6rem;
+    }
+
+    #bibleStudyModal .bible-reader-footer > span {
+        grid-column: 1 / -1;
+    }
+
+    #bibleStudyModal .bible-reader-footer > div {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.45rem;
+        width: 100%;
+    }
+
+    #bibleStudyModal #downloadVerseImgBtn,
+    #bibleStudyModal #attachSelectedVersesBtn {
+        min-width: 0;
+        width: 100%;
+        min-height: 44px;
+        padding: 0.5rem 0.35rem;
+        font-size: 0.7rem;
+        white-space: normal;
+        text-align: center;
+    }
+}
+
+/* Very short screens: preserve the reading area while keeping
+   the header and navigation controls compact. */
+@media (max-height: 520px) {
+    #bibleStudyModal .modal-card {
+        height: 96vh;
+        height: 96dvh;
+        padding: 0.55rem;
+    }
+
+    #bibleStudyModal .modal-header {
+        margin-bottom: 0.3rem;
+        padding-bottom: 0.4rem;
+    }
+
+    #bibleStudyModal .bible-toolbar {
+        padding-block: 0.35rem;
+    }
+
+    #bibleStudyModal #bibleReaderContent {
+        margin-block: 0.3rem;
+    }
+}
