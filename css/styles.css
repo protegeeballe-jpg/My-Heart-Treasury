@@ -717,3 +717,73 @@ button, label {
         margin-block: 0.3rem;
     }
 }
+
+
+/* ==========================================
+   BIBLE READER — COMPACT CONTROL REFINEMENT
+   Scripture reading styles remain untouched.
+   ========================================== */
+
+/* Navigation selectors: visually more compact. */
+#bibleStudyModal .bible-control-select {
+    min-height: 40px;
+    padding: 0.35rem 0.6rem;
+    font-size: 14px;
+}
+
+/* Highlight toolbar: less padding and tighter spacing. */
+#bibleStudyModal .bible-highlight-toolbar {
+    gap: 0.4rem;
+    padding: 0.45rem;
+    margin-bottom: 0.65rem;
+    align-items: center;
+}
+
+/* Highlight color selector. */
+#bibleStudyModal .bible-highlight-select {
+    min-height: 36px;
+    max-width: 8rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.75rem;
+    border-radius: 0.5rem;
+}
+
+/* Apply and Remove buttons. */
+#bibleStudyModal .bible-highlight-action {
+    min-height: 38px;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    border-radius: 0.5rem;
+}
+
+/* Keep status information readable without making controls bulky. */
+#bibleStudyModal .bible-highlight-toolbar > span {
+    min-width: 0;
+    font-size: 0.65rem;
+    line-height: 1.35;
+}
+
+/* Mobile: preserve comfortable touch areas and prevent
+   automatic input zoom on iOS selector controls. */
+@media (max-width: 640px) {
+    #bibleStudyModal .bible-control-select {
+        min-height: 42px;
+        font-size: 16px;
+    }
+
+    #bibleStudyModal .bible-highlight-toolbar {
+        gap: 0.35rem;
+        padding: 0.4rem;
+    }
+
+    #bibleStudyModal .bible-highlight-select {
+        min-height: 40px;
+        font-size: 14px;
+    }
+
+    #bibleStudyModal .bible-highlight-action {
+        min-height: 40px;
+        padding-inline: 0.6rem;
+    }
+}

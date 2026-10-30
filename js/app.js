@@ -597,10 +597,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 hint.textContent = 'Select verses to attach, create an image, or highlight. Highlights are saved separately for each translation.';
 
                 const highlightToolbar = document.createElement('div');
-                highlightToolbar.className = 'flex flex-wrap items-center gap-2 mb-3 p-2 rounded-xl bg-slate-800/60 border border-slate-700/70';
+                highlightToolbar.className = 'bible-highlight-toolbar flex flex-wrap items-center gap-2 mb-3 p-2 rounded-xl bg-slate-800/60 border border-slate-700/70';
 
                 highlightColorSelect = document.createElement('select');
-                highlightColorSelect.className = 'bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded-lg px-2 py-2';
+                highlightColorSelect.className = 'bible-highlight-select bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded-lg px-2 py-2';
                 highlightColorSelect.setAttribute('aria-label', 'Highlight color');
                 const colorLabels = [
                     ['yellow', 'Yellow'], ['green', 'Green'], ['blue', 'Blue'], ['pink', 'Pink']
@@ -614,14 +614,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 applyHighlightButton = document.createElement('button');
                 applyHighlightButton.type = 'button';
-                applyHighlightButton.className = 'px-3 py-2 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-200 border border-amber-500/40';
+                applyHighlightButton.className = 'bible-highlight-action px-3 py-2 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-200 border border-amber-500/40';
                 applyHighlightButton.textContent = 'Apply Highlight';
                 applyHighlightButton.disabled = true;
                 applyHighlightButton.addEventListener('click', () => applyHighlightToSelected(false));
 
                 removeHighlightButton = document.createElement('button');
                 removeHighlightButton.type = 'button';
-                removeHighlightButton.className = 'px-3 py-2 rounded-lg text-xs font-semibold bg-slate-700 text-slate-200 border border-slate-600';
+                removeHighlightButton.className = 'bible-highlight-action px-3 py-2 rounded-lg text-xs font-semibold bg-slate-700 text-slate-200 border border-slate-600';
                 removeHighlightButton.textContent = 'Remove Highlight';
                 removeHighlightButton.disabled = true;
                 removeHighlightButton.addEventListener('click', () => applyHighlightToSelected(true));
