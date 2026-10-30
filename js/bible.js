@@ -227,16 +227,249 @@ const BibleController = {
             reference: 'Proverbs 3:5',
             text: 'Trust in the LORD with all your heart, and do not lean on your own understanding.'
         };
+   
+    /**
+     * Select a real verse from the requested translation.
+     * The selection is stable for the local calendar day and changes daily.
+     */
+    async getVerseOfTheDay(versionId = this.currentVersion) {
+        const version = this.versions.find(item => item.id === versionId);
+        if (!version) return null;
+
+        const data = await this.getVersionData(versionId);
+        if (!Array.isArray(data)) return null;
+
+        const candidates = data.filter(record =>
+            record &&
+            typeof record.book === 'string' &&
+            record.book.trim() &&
+            Number.isSafeInteger(Number(record.chapter)) &&
+            Number(record.chapter) > 0 &&
+            Number.isSafeInteger(Number(record.verse)) &&
+            Number(record.verse) > 0 &&
+            typeof record.text === 'string' &&
+            record.text.trim()
+        );
+
+        if (candidates.length === 0) return null;
+
+        // Create a stable translation-specific sequence of daily verses.
+        let hash = 2166136261;
+        for (let i = 0; i < versionId.length; i += 1) {
+            hash = Math.imul(hash ^ versionId.charCodeAt(i), 16777619);
+        }
+
+        const seed = hash >>> 0;
+        const count = candidates.length;
+
+        const gcd = (a, b) => {
+            while (b !== 0) {
+                const remainder = a % b;
+                a = b;
+                b = remainder;
+            }
+            return a;
+        };
+
+        let step = (seed % count) || 1;
+        while (gcd(step, count) !== 1) {
+            step += 1;
+            if (step >= count) step = 1;
+        }
+
+        const offset = seed % count;
+        const today = new Date();
+        const dayNumber = Math.floor(
+            Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 86400000
+        );
+
+        const index = (((dayNumber % count) * step) + offset) % count;
+        const selected = candidates[index];
+
+        return {
+            reference: `${selected.book.trim()} ${Number(selected.chapter)}:${Number(selected.verse)}`,
+            text: selected.text,
+            versionId: versionId,
+            versionName: version.name
+        };
     },
 
-    generateVerseImage(verseText, reference, versionLabel) {
-        if (typeof verseText !== 'string' || !verseText.trim()) {
-            throw new TypeError('Cannot generate a verse image without verified verse text.');
-        }
-        if (typeof reference !== 'string' || !reference.trim()) {
-            throw new TypeError('Cannot generate a verse image without a verse reference.');
+    /**
+     * Highlight colors and storage are separate from Treasury records.
+     */
+    highlightColors: ['yellow', 'green', 'blue', 'pink'],
+
+    async _openHighlightDatabase() {
+        if (typeof indexedDB === 'undefined') {
+            throw new Error('This browser does not support IndexedDB.');
         }
 
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open('myHeartTreasuryBibleHighlights', 1);
+
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains('highlights')) {
+                    db.createObjectStore('highlights', { keyPath: 'id' });
+                }
+            };
+
+            request.onsuccess = () => {
+                const db = request.result;
+                db.onversionchange = () => db.close();
+                resolve(db);
+            };
+
+            request.onerror = () => {
+                reject(request.error || new Error('Unable to open Bible highlight storage.'));
+            };
+        });
+    },
+
+    _makeHighlightRecord(versionId, book, chapter, verse, color) {
+        const versionExists = this.versions.some(item => item.id === versionId);
+        const chapterNumber = Number(chapter);
+        const verseNumber = Number(verse);
+
+        if (!versionExists) {
+            throw new TypeError('Unknown Bible translation.');
+        }
+        if (typeof book !== 'string' || !book.trim()) {
+            throw new TypeError('A valid Bible book is required.');
+        }
+        if (!Number.isSafeInteger(chapterNumber) || chapterNumber < 1) {
+            throw new TypeError('A valid chapter number is required.');
+        }
+        if (!Number.isSafeInteger(verseNumber) || verseNumber < 1) {
+            throw new TypeError('A valid verse number is required.');
+        }
+
+        const bookName = book.trim();
+        const bookKey = bookName.toLocaleUpperCase();
+
+        return {
+            id: `${versionId}::${bookKey}::${chapterNumber}::${verseNumber}`,
+            versionId: versionId,
+            book: bookName,
+            bookKey: bookKey,
+            chapter: chapterNumber,
+            verse: verseNumber,
+            color: color || null,
+            updatedAt: Date.now()
+        };
+    },
+
+    async _writeHighlightRecord(record, remove = false) {
+        const db = await this._openHighlightDatabase();
+
+        return new Promise((resolve, reject) => {
+            let transaction;
+
+            try {
+                transaction = db.transaction('highlights', 'readwrite');
+                const store = transaction.objectStore('highlights');
+
+                if (remove) {
+                    store.delete(record.id);
+                } else {
+                    store.put(record);
+                }
+            } catch (error) {
+                db.close();
+                reject(error);
+                return;
+            }
+
+            transaction.oncomplete = () => {
+                db.close();
+                resolve(true);
+            };
+
+            transaction.onerror = () => {
+                const error = transaction.error || new Error('Highlight storage failed.');
+                db.close();
+                reject(error);
+            };
+
+            transaction.onabort = () => {
+                const error = transaction.error || new Error('Highlight storage was interrupted.');
+                db.close();
+                reject(error);
+            };
+        });
+    },
+
+    async getChapterHighlights(versionId, book, chapter) {
+        const target = this._makeHighlightRecord(
+            versionId, book, chapter, 1, null
+        );
+        const db = await this._openHighlightDatabase();
+
+        return new Promise((resolve, reject) => {
+            let highlights = Object.create(null);
+            let transaction;
+
+            try {
+                transaction = db.transaction('highlights', 'readonly');
+                const request = transaction.objectStore('highlights').getAll();
+
+                request.onsuccess = () => {
+                    (request.result || []).forEach(record => {
+                        if (
+                            record.versionId === target.versionId &&
+                            record.bookKey === target.bookKey &&
+                            record.chapter === target.chapter &&
+                            this.highlightColors.includes(record.color)
+                        ) {
+                            highlights[record.verse] = record.color;
+                        }
+                    });
+                };
+            } catch (error) {
+                db.close();
+                reject(error);
+                return;
+            }
+
+            transaction.oncomplete = () => {
+                db.close();
+                resolve(highlights);
+            };
+
+            transaction.onerror = () => {
+                const error = transaction.error || new Error('Unable to read Bible highlights.');
+                db.close();
+                reject(error);
+            };
+
+            transaction.onabort = () => {
+                const error = transaction.error || new Error('Reading Bible highlights was interrupted.');
+                db.close();
+                reject(error);
+            };
+        });
+    },
+
+    async saveHighlight(versionId, book, chapter, verse, color) {
+        if (!this.highlightColors.includes(color)) {
+            throw new TypeError('Invalid Bible highlight color.');
+        }
+
+        const record = this._makeHighlightRecord(
+            versionId, book, chapter, verse, color
+        );
+
+        return this._writeHighlightRecord(record, false);
+    },
+
+    async removeHighlight(versionId, book, chapter, verse) {
+        const record = this._makeHighlightRecord(
+            versionId, book, chapter, verse, null
+        );
+
+        return this._writeHighlightRecord(record, true);
+    },
+    generateVerseImage(verseText, reference, versionLabel) {
         const canvas = document.createElement('canvas');
         canvas.width = 1080;
         canvas.height = 1080;
