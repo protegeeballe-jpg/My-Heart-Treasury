@@ -95,15 +95,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         let currentBibleBook = null;
         let currentBibleChapter = null;
         let selectedVerses = new Map();
-        let selectionStatusElement = null;
+
+        // Bible reader icon dock references & state integration
+        const bibleHighlightBtn = document.getElementById('bibleHighlightBtn');
+        const bibleBookmarkBtn = document.getElementById('bibleBookmarkBtn');
+        const bibleCopyBtn = document.getElementById('bibleCopyBtn');
+        const bibleHighlightMenu = document.getElementById('bibleHighlightMenu');
+        const bibleHighlightColorSelect = document.getElementById('bibleHighlightColorSelect');
+        const applyBibleHighlightBtn = document.getElementById('applyBibleHighlightBtn');
+        const removeBibleHighlightBtn = document.getElementById('removeBibleHighlightBtn');
+        const bibleHighlightStatusElement = document.getElementById('bibleHighlightStatus');
+        const bibleSelectionStatusElement = document.getElementById('bibleSelectionStatus');
+
+        let selectionStatusElement = bibleSelectionStatusElement;
         let readerRequestToken = 0;
         let verseOfDayRequestToken = 0;
         let currentVerseOfDay = null;
         let verseOfDayRefreshTimer = null;
-        let highlightColorSelect = null;
-        let applyHighlightButton = null;
-        let removeHighlightButton = null;
-        let highlightStatusElement = null;
+        let highlightColorSelect = bibleHighlightColorSelect;
+        let applyHighlightButton = applyBibleHighlightBtn;
+        let removeHighlightButton = removeBibleHighlightBtn;
+        let highlightStatusElement = bibleHighlightStatusElement;
+
         const BIBLE_VERSION_PREFERENCE_KEY = 'myHeartTreasury.selectedBibleVersion';
         const HIGHLIGHT_STYLE_MAP = {
             yellow: { backgroundColor: 'rgba(250, 204, 21, 0.22)', borderLeft: '3px solid #eab308' },
@@ -154,7 +167,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('Bible version selector has no toolbar parent.');
             }
 
-            // Add labels and the two navigation selectors without requiring an HTML-file change.
             toolbar.className = 'bible-toolbar grid gap-2 py-2 border-b border-slate-800/60';
 
             const versionField = document.createElement('label');
@@ -238,39 +250,58 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         function updateVerseActionButtons() {
             const selected = getSelectedVerseRows();
-            const canAttach = selected.length > 0;
+            const hasSelection = selected.length > 0;
             const canDownloadImage = selected.length === 1;
 
-            if (attachSelectedVersesBtn) {
-                attachSelectedVersesBtn.disabled = !canAttach;
-                attachSelectedVersesBtn.style.opacity = canAttach ? '1' : '0.5';
-                attachSelectedVersesBtn.style.cursor = canAttach ? 'pointer' : 'not-allowed';
-                attachSelectedVersesBtn.title = canAttach
-                    ? `${selected.length} verse(s) selected for attachment`
-                    : 'Select at least one verse to attach';
-            }
+            const setButtonAvailability = (button, available, title) => {
+                if (!button) return;
 
-            if (downloadVerseImgBtn) {
-                downloadVerseImgBtn.disabled = !canDownloadImage;
-                downloadVerseImgBtn.style.opacity = canDownloadImage ? '1' : '0.5';
-                downloadVerseImgBtn.style.cursor = canDownloadImage ? 'pointer' : 'not-allowed';
-                downloadVerseImgBtn.title = canDownloadImage
-                    ? 'Download an image of the selected verse'
-                    : 'Select exactly one verse to create an image';
-            }
+                button.disabled = !available;
+                button.title = title;
+                button.setAttribute('aria-disabled', String(!available));
+            };
+
+            setButtonAvailability(
+                bibleHighlightBtn,
+                hasSelection,
+                hasSelection ? 'Highlight selected verses' : 'Select verses first'
+            );
+
+            setButtonAvailability(
+                bibleBookmarkBtn,
+                hasSelection && typeof BibleController.saveBookmark === 'function',
+                hasSelection ? 'Bookmark selected verses' : 'Select verses first'
+            );
+
+            setButtonAvailability(
+                bibleCopyBtn,
+                hasSelection,
+                hasSelection ? 'Copy selected verses' : 'Select verses first'
+            );
+
+            setButtonAvailability(
+                attachSelectedVersesBtn,
+                hasSelection,
+                hasSelection ? 'Attach selected verses to Heart Treasury' : 'Select verses first'
+            );
+
+            setButtonAvailability(
+                downloadVerseImgBtn,
+                canDownloadImage,
+                canDownloadImage ? 'Download selected verse as an image' : 'Select exactly one verse for an image'
+            );
 
             if (selectionStatusElement) {
                 selectionStatusElement.textContent =
-                    `${selected.length} verse(s) selected. Select one verse for an image, or one or more verses to attach or highlight.`;
+                    `${selected.length} verse(s) selected.`;
             }
 
             if (applyHighlightButton) {
-                applyHighlightButton.disabled = selected.length === 0;
-                applyHighlightButton.style.opacity = selected.length > 0 ? '1' : '0.5';
+                applyHighlightButton.disabled = !hasSelection;
             }
+
             if (removeHighlightButton) {
-                removeHighlightButton.disabled = selected.length === 0;
-                removeHighlightButton.style.opacity = selected.length > 0 ? '1' : '0.5';
+                removeHighlightButton.disabled = !hasSelection;
             }
         }
 
@@ -321,6 +352,137 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
 
+        async function toggleSelectedBookmarks() {
+            const selected = getSelectedVerseRows();
+
+            if (selected.length === 0) {
+                return;
+            }
+
+            if (
+                typeof BibleController.getChapterBookmarks !== 'function' ||
+                typeof BibleController.saveBookmark !== 'function' ||
+                typeof BibleController.removeBookmark !== 'function'
+            ) {
+                if (selectionStatusElement) {
+                    selectionStatusElement.textContent =
+                        'Bookmark storage is unavailable.';
+                }
+                return;
+            }
+
+            const versionId = BibleController.currentVersion;
+            const book = currentBibleBook;
+            const chapter = currentBibleChapter;
+            const requestToken = readerRequestToken;
+
+            try {
+                const existingBookmarks =
+                    await BibleController.getChapterBookmarks(
+                        versionId,
+                        book,
+                        chapter
+                    );
+
+                if (requestToken !== readerRequestToken) return;
+
+                const removeAll = selected.every(
+                    item => Boolean(existingBookmarks[item.verse])
+                );
+
+                for (const item of selected) {
+                    if (removeAll) {
+                        await BibleController.removeBookmark(
+                            versionId,
+                            book,
+                            chapter,
+                            item.verse
+                        );
+                    } else {
+                        await BibleController.saveBookmark(
+                            versionId,
+                            book,
+                            chapter,
+                            item.verse
+                        );
+                    }
+                }
+
+                if (requestToken !== readerRequestToken) return;
+
+                selectedVerses.clear();
+
+                await renderChapter(++readerRequestToken);
+
+                if (selectionStatusElement) {
+                    selectionStatusElement.textContent = removeAll
+                        ? `${selected.length} bookmark(s) removed.`
+                        : `${selected.length} verse(s) bookmarked.`;
+                }
+
+            } catch (error) {
+                console.error('[BibleViewer] Bookmark operation failed:', error);
+
+                if (selectionStatusElement) {
+                    selectionStatusElement.textContent =
+                        'Bookmarks could not be saved. Existing highlights and Scripture remain unchanged.';
+                }
+            }
+        }
+
+        async function copySelectedVerses() {
+            const selected = getSelectedVerseRows();
+
+            if (selected.length === 0) {
+                return;
+            }
+
+            const versionName = getSelectedVersionLabel();
+
+            const copyText = selected.map(item =>
+                `${currentBibleBook} ${currentBibleChapter}:${item.verse} (${versionName})\n${item.text}`
+            ).join('\n\n');
+
+            try {
+                if (
+                    navigator.clipboard &&
+                    typeof navigator.clipboard.writeText === 'function'
+                ) {
+                    await navigator.clipboard.writeText(copyText);
+                } else {
+                    const temporaryInput = document.createElement('textarea');
+
+                    temporaryInput.value = copyText;
+                    temporaryInput.setAttribute('readonly', '');
+                    temporaryInput.style.position = 'fixed';
+                    temporaryInput.style.opacity = '0';
+
+                    document.body.appendChild(temporaryInput);
+                    temporaryInput.select();
+
+                    const copied = document.execCommand('copy');
+                    temporaryInput.remove();
+
+                    if (!copied) {
+                        throw new Error('The browser could not copy the selected verses.');
+                    }
+                }
+
+                if (selectionStatusElement) {
+                    selectionStatusElement.textContent =
+                        `${selected.length} verse(s) copied to clipboard.`;
+                }
+
+            } catch (error) {
+                console.error('[BibleViewer] Copy operation failed:', error);
+
+                if (selectionStatusElement) {
+                    selectionStatusElement.textContent =
+                        'Unable to copy verses. Check browser clipboard permissions.';
+                }
+            }
+        }
+
         function populateBibleVersions() {
             const validVersions = BibleController.versions.filter(version =>
                 version && typeof version.id === 'string' && typeof version.file === 'string'
@@ -330,7 +492,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('No valid Bible translations are listed in BibleController.versions.');
             }
 
-            // Populate the translation selector directly from the version catalog.
             bibleVersionSelect.replaceChildren();
             validVersions.forEach(version => {
                 const option = document.createElement('option');
@@ -422,7 +583,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const verseOfDay =
                     await BibleController.getVerseOfTheDay(versionId);
 
-                // Prevent an older request from overwriting a newer translation.
                 if (
                     requestToken !== verseOfDayRequestToken ||
                     versionId !== BibleController.currentVersion
@@ -449,7 +609,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 currentVerseOfDay = verseOfDay;
 
-                // A reference may be valid even when its translation has no text.
                 if (
                     typeof verseOfDay.text !== 'string' ||
                     !verseOfDay.text.trim()
@@ -465,7 +624,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return verseOfDay;
                 }
 
-                // Display the selected translation's own wording.
                 updateHomeVerse(
                     verseOfDay.reference,
                     verseOfDay.text.trim(),
@@ -513,7 +671,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const chapter = currentBibleChapter;
 
             selectedVerses.clear();
-            selectionStatusElement = null;
+            selectionStatusElement = bibleSelectionStatusElement;
             updateVerseActionButtons();
 
             if (!book || !Number.isSafeInteger(Number(chapter)) || Number(chapter) < 1) {
@@ -588,62 +746,39 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (requestToken !== readerRequestToken) return;
                 }
 
+                let chapterBookmarks = Object.create(null);
+
+                if (typeof BibleController.getChapterBookmarks === 'function') {
+                    try {
+                        chapterBookmarks = await BibleController.getChapterBookmarks(
+                            versionId,
+                            book,
+                            Number(chapter)
+                        );
+                    } catch (bookmarkError) {
+                        console.warn(
+                            '[BibleViewer] Saved bookmarks could not be loaded:',
+                            bookmarkError
+                        );
+                        chapterBookmarks = Object.create(null);
+                    }
+
+                    if (requestToken !== readerRequestToken) return;
+                }
+
                 const heading = document.createElement('h4');
                 heading.className = 'font-bold text-rose-400 text-base mb-2';
                 heading.textContent = `${book} Chapter ${chapter} (${versionName})`;
 
-                const hint = document.createElement('p');
-                hint.className = 'text-[10px] text-slate-500 mb-3';
-                hint.textContent = 'Select verses to attach, create an image, or highlight. Highlights are saved separately for each translation.';
+                // Keep the Scripture pane focused on the chapter itself.
+                // Actions now live in the fixed bottom icon dock.
+                bibleReaderContent.replaceChildren(heading);
 
-                const highlightToolbar = document.createElement('div');
-                highlightToolbar.className = 'bible-highlight-toolbar flex flex-wrap items-center gap-2 mb-3 p-2 rounded-xl bg-slate-800/60 border border-slate-700/70';
-
-                highlightColorSelect = document.createElement('select');
-                highlightColorSelect.className = 'bible-highlight-select bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded-lg px-2 py-2';
-                highlightColorSelect.setAttribute('aria-label', 'Highlight color');
-                const colorLabels = [
-                    ['yellow', 'Yellow'], ['green', 'Green'], ['blue', 'Blue'], ['pink', 'Pink']
-                ];
-                colorLabels.forEach(([value, label]) => {
-                    const option = document.createElement('option');
-                    option.value = value;
-                    option.textContent = label;
-                    highlightColorSelect.appendChild(option);
-                });
-
-                applyHighlightButton = document.createElement('button');
-                applyHighlightButton.type = 'button';
-                applyHighlightButton.className = 'bible-highlight-action px-3 py-2 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-200 border border-amber-500/40';
-                applyHighlightButton.textContent = 'Apply Highlight';
-                applyHighlightButton.disabled = true;
-                applyHighlightButton.addEventListener('click', () => applyHighlightToSelected(false));
-
-                removeHighlightButton = document.createElement('button');
-                removeHighlightButton.type = 'button';
-                removeHighlightButton.className = 'bible-highlight-action px-3 py-2 rounded-lg text-xs font-semibold bg-slate-700 text-slate-200 border border-slate-600';
-                removeHighlightButton.textContent = 'Remove Highlight';
-                removeHighlightButton.disabled = true;
-                removeHighlightButton.addEventListener('click', () => applyHighlightToSelected(true));
-
-                highlightStatusElement = document.createElement('span');
-                highlightStatusElement.className = 'text-[10px] text-slate-400';
-                highlightStatusElement.setAttribute('aria-live', 'polite');
-                if (typeof BibleController.getChapterHighlights !== 'function' ||
-                    typeof BibleController.saveHighlight !== 'function' ||
-                    typeof BibleController.removeHighlight !== 'function') {
-                    highlightStatusElement.textContent = 'Highlight storage is not available in this controller.';
-                    applyHighlightButton.disabled = true;
-                    removeHighlightButton.disabled = true;
+                if (bibleHighlightMenu) {
+                    bibleHighlightMenu.classList.add('hidden');
                 }
 
-                highlightToolbar.append(highlightColorSelect, applyHighlightButton, removeHighlightButton, highlightStatusElement);
-
-                selectionStatusElement = document.createElement('p');
-                selectionStatusElement.className = 'text-[10px] text-rose-300 mb-3';
-                selectionStatusElement.setAttribute('aria-live', 'polite');
-
-                bibleReaderContent.replaceChildren(heading, hint, highlightToolbar, selectionStatusElement);
+                bibleHighlightBtn?.setAttribute('aria-expanded', 'false');
 
                 const verseFrequency = new Map();
                 rows.forEach(row => verseFrequency.set(row.verse, (verseFrequency.get(row.verse) || 0) + 1));
@@ -652,10 +787,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const rowElement = document.createElement('label');
                     rowElement.className = 'flex items-start gap-2 text-xs text-slate-300 leading-relaxed mb-2 rounded-lg px-2 py-2 -mx-2 transition-colors';
                     rowElement.style.cursor = row.text && row.text.trim() && verseFrequency.get(row.verse) === 1 ? 'pointer' : 'default';
+                    
                     const savedColor = chapterHighlights[row.verse];
                     if (savedColor && HIGHLIGHT_STYLE_MAP[savedColor]) {
                         Object.assign(rowElement.style, HIGHLIGHT_STYLE_MAP[savedColor]);
                         rowElement.title = `Highlighted ${savedColor}`;
+                    }
+
+                    const isBookmarked = Boolean(chapterBookmarks[row.verse]);
+
+                    rowElement.dataset.bookmarked = String(isBookmarked);
+
+                    if (isBookmarked) {
+                        rowElement.classList.add('bible-verse-bookmarked');
+
+                        rowElement.title = rowElement.title
+                            ? `${rowElement.title} · Bookmarked`
+                            : 'Bookmarked';
                     }
 
                     const checkbox = document.createElement('input');
@@ -737,7 +885,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const book = currentBibleBook;
 
             selectedVerses.clear();
-            selectionStatusElement = null;
+            selectionStatusElement = bibleSelectionStatusElement;
             currentBibleChapter = null;
             appendOptions(bibleChapterSelect, [], null);
             updateVerseActionButtons();
@@ -781,7 +929,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const version = getVersion(versionId);
 
             selectedVerses.clear();
-            selectionStatusElement = null;
+            selectionStatusElement = bibleSelectionStatusElement;
             currentBibleBook = null;
             currentBibleChapter = null;
             appendOptions(bibleBookSelect, [], null);
@@ -872,8 +1020,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Load the shared Verse of the Day on the main Treasury screen.
         void renderVerseOfDay();
         document.addEventListener('visibilitychange', () => {
-             // Refresh the home-screen Verse of the Day when the app becomes visible.
-            // This also helps update the verse when the app resumes after midnight.
             if (!document.hidden && currentVerseOfDay) renderVerseOfDay();
         });
 
@@ -915,6 +1061,47 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             currentBibleChapter = chapter;
             await renderChapter(++readerRequestToken);
+        });
+
+        // ==========================================
+        // BIBLE READER — BOTTOM ICON DOCK
+        // ==========================================
+
+        bibleHighlightBtn?.addEventListener('click', () => {
+            if (selectedVerses.size === 0 || !bibleHighlightMenu) return;
+
+            const shouldOpen = bibleHighlightMenu.classList.contains('hidden');
+
+            bibleHighlightMenu.classList.toggle('hidden', !shouldOpen);
+
+            bibleHighlightBtn.setAttribute(
+                'aria-expanded',
+                String(shouldOpen)
+            );
+        });
+
+        bibleHighlightBtn?.setAttribute('aria-expanded', 'false');
+
+        applyBibleHighlightBtn?.addEventListener('click', async () => {
+            bibleHighlightMenu?.classList.add('hidden');
+            bibleHighlightBtn?.setAttribute('aria-expanded', 'false');
+
+            await applyHighlightToSelected(false);
+        });
+
+        removeBibleHighlightBtn?.addEventListener('click', async () => {
+            bibleHighlightMenu?.classList.add('hidden');
+            bibleHighlightBtn?.setAttribute('aria-expanded', 'false');
+
+            await applyHighlightToSelected(true);
+        });
+
+        bibleBookmarkBtn?.addEventListener('click', async () => {
+            await toggleSelectedBookmarks();
+        });
+
+        bibleCopyBtn?.addEventListener('click', async () => {
+            await copySelectedVerses();
         });
 
         attachVodBtn?.addEventListener('click', async () => {
@@ -1029,7 +1216,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
-        // Keep actions unavailable until actual verse records have been loaded and selected.
         updateVerseActionButtons();
     }
 
@@ -1039,7 +1225,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('[BibleViewer] Initialization failed; the rest of My Heart Treasury will continue:', bibleInitError);
     }
 
-    // App State & In-Memory Session PIN (Never saved to persistent storage)
+    // App State & In-Memory Session PIN
     let currentHeartCount = 0;
     let selectedDurationHours = 24;
     let activeTimerInterval = null;
@@ -1047,7 +1233,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     let cachedSession = null;
     let sessionPin = null;
 
-    // DOM References
     const savingsDateInput = document.getElementById('savingsDate');
     const sessionCountdown = document.getElementById('sessionCountdown');
     const heartCountBadge = document.getElementById('heartCountBadge');
@@ -1128,7 +1313,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    // Google Drive Sync Setup
     const GOOGLE_CLIENT_ID = '493219318956-1r4ma1h1pp8qqjqf8djjfqrdhp2s6us4.apps.googleusercontent.com';
     const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
     let tokenClient = null;
@@ -1220,9 +1404,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // ==========================================
-    // 🔒 STRICT STARTUP PIN UNLOCK CHECK
-    // ==========================================
     async function checkPinLock() {
         const savedPinToken = await TreasuryStorage.getPin();
         const pinModal = document.getElementById('pinLockModal');
@@ -1241,7 +1422,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     const isValid = await TreasuryStorage.verifyPin(enteredPin);
 
                     if (isValid) {
-                        sessionPin = enteredPin; // Store ONLY in memory
+                        sessionPin = enteredPin;
                         pinModal.classList.add('hidden');
                         if (pinInput) pinInput.value = '';
                         resolve();
@@ -1266,9 +1447,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     await checkPinLock();
 
-    // ==========================================
-    // 🛡️ STRICT PIN SETTINGS & CHANGE MANAGEMENT
-    // ==========================================
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
         const currentPinToken = await TreasuryStorage.getPin();
         
@@ -1369,7 +1547,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Session & Countdown
     async function initSession() {
         cachedSession = await TreasuryStorage.getActiveSession();
         if (!cachedSession) {
@@ -1395,7 +1572,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearInterval(activeTimerInterval);
     activeTimerInterval = setInterval(updateCountdownDisplay, 1000);
 
-    // Duration Selector Buttons
     document.querySelectorAll('.btn-duration').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             document.querySelectorAll('.btn-duration').forEach(b => b.classList.remove('active'));
@@ -1409,7 +1585,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // Heart Counter & Particles
     tapHeartBtn?.addEventListener('click', (e) => {
         currentHeartCount++;
         if (heartCountBadge) heartCountBadge.textContent = `${currentHeartCount} ${currentHeartCount === 1 ? 'Heart' : 'Hearts'}`;
@@ -1441,7 +1616,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         setTimeout(() => particle.remove(), 1000);
     }
 
-    // Save Treasury Entry (Includes Automatic Offline Location Tagging)
     saveTreasuryBtn?.addEventListener('click', async () => {
         if (currentHeartCount === 0) {
             await showAppModal({
@@ -1453,15 +1627,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         const dateKey = savingsDateInput ? savingsDateInput.value : getTodayLocalDate();
-        
-        // Automatically capture hardware GPS coordinates (works offline)
         const locationData = await LocationController.getCurrentLocation();
 
         const sessionPayload = {
             hearts: currentHeartCount,
             attachment: {
                 ...(MediaController.pendingAttachment || {}),
-                location: locationData // Automatically embedded in attachment payload
+                location: locationData
             }
         };
 
@@ -1481,9 +1653,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (indicator) indicator.textContent = "Attach";
     });
 
-    // ==========================================
-    // 📎 ATTACHMENT MODAL WIRING & PREVIEW HANDLERS
-    // ==========================================
     const attachmentModal = document.getElementById('attachmentModal');
     const calendarModal = document.getElementById('calendarModal');
     const timelineModal = document.getElementById('timelineModal');
@@ -1508,7 +1677,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const cameraPreview = document.getElementById('cameraPreview');
     const recordProgress = document.getElementById('recordProgress');
 
-    // Handle Photo Selection & Compression Preview
     photoInput?.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -1521,27 +1689,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-  // Preserve an existing photo or video when adding a note.
-heartNoteInput?.addEventListener('input', (e) => {
-    const text = e.target.value.trim();
-    const attachment = MediaController.pendingAttachment;
+    heartNoteInput?.addEventListener('input', (e) => {
+        const text = e.target.value.trim();
+        const attachment = MediaController.pendingAttachment;
 
-    if (
-        attachment &&
-        (attachment.type === 'photo' ||
-         attachment.type === 'video')
-    ) {
-        if (text) {
-            attachment.note = text;
+        if (
+            attachment &&
+            (attachment.type === 'photo' ||
+             attachment.type === 'video')
+        ) {
+            if (text) {
+                attachment.note = text;
+            } else {
+                delete attachment.note;
+            }
         } else {
-            delete attachment.note;
+            MediaController.setNoteAttachment(text);
         }
-    } else {
-        MediaController.setNoteAttachment(text);
-    }
-});
+    });
 
-    // Handle 3s Video Recording Trigger
     startRecorderBtn?.addEventListener('click', async () => {
         cameraViewportContainer?.classList.remove('hidden');
         await MediaController.startThreeSecondRecording(cameraPreview, recordProgress, (attachment) => {
@@ -1559,7 +1725,6 @@ heartNoteInput?.addEventListener('input', (e) => {
         });
     });
 
-    // Clear Media Preview
     clearMediaBtn?.addEventListener('click', () => {
         MediaController.clear();
         mediaPreviewBox?.classList.add('hidden');
@@ -1567,7 +1732,6 @@ heartNoteInput?.addEventListener('input', (e) => {
         if (photoInput) photoInput.value = '';
     });
 
-    // Confirm Attachment Button (Saves to pending state & closes modal)
     confirmAttachmentBtn?.addEventListener('click', () => {
         const noteText = heartNoteInput?.value?.trim() || '';
 
@@ -1700,7 +1864,6 @@ heartNoteInput?.addEventListener('input', (e) => {
                 </div>
             `;
 
-            // RENDER GOOGLE MAPS LINK IF LOCATION EXISTS AT ROOT ATTACHMENT
             const rootLocation = entry.attachment?.location;
             if (rootLocation && rootLocation.mapsUrl) {
                 const locBtn = document.createElement('a');
@@ -1735,7 +1898,6 @@ heartNoteInput?.addEventListener('input', (e) => {
                         }
                     }
 
-                    // RENDER GOOGLE MAPS LINK IF LOCATION EXISTS IN SUB-ENTRY
                     const subLocation = sub.location;
                     if (subLocation && subLocation.mapsUrl) {
                         const locBtn = document.createElement('a');
@@ -1755,7 +1917,6 @@ heartNoteInput?.addEventListener('input', (e) => {
         lucide.createIcons();
     });
 
-    // Export & Import Handlers
     document.getElementById('exportBtn')?.addEventListener('click', async () => {
         await TreasuryStorage.exportData(sessionPin);
     });
@@ -1782,7 +1943,6 @@ heartNoteInput?.addEventListener('input', (e) => {
         });
     });
 
-    // Sound Toggle Handler
     let soundEnabled = true;
     document.getElementById('soundToggleBtn')?.addEventListener('click', () => {
         soundEnabled = !soundEnabled;
