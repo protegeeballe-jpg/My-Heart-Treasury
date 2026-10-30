@@ -216,19 +216,7 @@ const BibleController = {
         return Array.from(chapters).sort((a, b) => a - b);
     },
 
-    /**
-     * This is retained for compatibility with the existing app.js.
-     * It is a fixed display quote, not dynamically retrieved from the selected
-     * translation. The reference is narrowed to Proverbs 3:5 because the text
-     * supplied here contains only verse 5, not verses 5-6.
-     */
-    getVerseOfTheDay() {
-        return {
-            reference: 'Proverbs 3:5',
-            text: 'Trust in the LORD with all your heart, and do not lean on your own understanding.'
-        };
-   
-    /**
+      /**
      * Select a real verse from the requested translation.
      * The selection is stable for the local calendar day and changes daily.
      */
