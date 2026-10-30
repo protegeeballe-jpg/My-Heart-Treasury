@@ -113,43 +113,96 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    async function loadAndRenderChapter(book, chapter, versionId) {
+async function loadAndRenderChapter(book, chapter, versionId) {
         if (!bibleReaderContent) return;
-        bibleReaderContent.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">Loading scripture...</p>`;
+        bibleReaderContent.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">Loading scripture for ${versionId}...</p>`;
 
         const data = await BibleController.getVersionData(versionId);
+        
+        // Find the human-readable display name for the header
+        const versionObj = BibleController.versions.find(v => v.id === versionId);
+        const versionDisplayName = versionObj ? versionObj.name : versionId;
+
         if (!data) {
-            bibleReaderContent.innerHTML = `<p class="text-xs text-rose-400 text-center py-6">⚠️ Failed to load scripture version.</p>`;
+            bibleReaderContent.innerHTML = `
+                <div class="p-4 text-center space-y-2">
+                    <p class="text-xs text-rose-400 font-bold">⚠️ Failed to load scripture file: ./bible/${versionId}.json</p>
+                    <p class="text-[11px] text-slate-400">Make sure you are running a local server (like VS Code Live Server) and not opening index.html directly via file://</p>
+                </div>
+            `;
             return;
         }
 
-        let verseHtml = '';
+        // Diagnostic log to inspect the loaded JSON in your browser console (Press F12)
+        console.log(`[BibleViewer] Successfully loaded ${versionId}:`, data);
+
+        let verseHtml = `<h4 class="font-bold text-rose-400 text-base mb-3">${book} Chapter ${chapter} (${versionDisplayName})</h4>`;
+        
         try {
-            let bookObj = Array.isArray(data) ? data.find(b => b.name === book || b.book === book) : (data[book] || data);
-            if (bookObj && bookObj.chapters) {
-                let chapterVerses = bookObj.chapters[chapter - 1] || bookObj.chapters[0];
-                if (Array.isArray(chapterVerses)) {
-                    chapterVerses.forEach((verseText, idx) => {
-                        verseHtml += `<p class="text-xs text-slate-300 leading-relaxed"><span class="text-rose-400 font-bold mr-1">${idx + 1}</span> ${verseText}</p>`;
-                    });
+            let versesFound = null;
+            const targetChapter = parseInt(chapter, 10) || 1;
+
+            // 1. If data is an array of books
+            if (Array.isArray(data)) {
+                const bookMatch = data.find(b => 
+                    (b.name && b.name.toLowerCase() === book.toLowerCase()) || 
+                    (b.book && b.book.toLowerCase() === book.toLowerCase()) ||
+                    (b.abbrev && b.abbrev.toLowerCase() === book.toLowerCase())
+                ) || data[0];
+
+                if (bookMatch) {
+                    const chIndex = targetChapter - 1;
+                    if (bookMatch.chapters && Array.isArray(bookMatch.chapters)) {
+                        versesFound = bookMatch.chapters[chIndex] || bookMatch.chapters[0];
+                    } else if (bookMatch[targetChapter]) {
+                        versesFound = bookMatch[targetChapter];
+                    }
+                }
+            } 
+            // 2. If data is an object with book keys
+            else if (typeof data === 'object' && data !== null) {
+                const bookKey = Object.keys(data).find(k => k.toLowerCase() === book.toLowerCase()) || Object.keys(data)[0];
+                const bookContent = data[bookKey];
+
+                if (bookContent) {
+                    if (bookContent.chapters && Array.isArray(bookContent.chapters)) {
+                        versesFound = bookContent.chapters[targetChapter - 1] || bookContent.chapters[targetChapter];
+                    } else if (bookContent[targetChapter]) {
+                        versesFound = bookContent[targetChapter];
+                    } else if (Array.isArray(bookContent)) {
+                        versesFound = bookContent[targetChapter - 1];
+                    } else {
+                        versesFound = bookContent;
+                    }
                 }
             }
 
-            if (!verseHtml) {
-                verseHtml = `
-                    <div class="space-y-3">
-                        <h4 class="font-bold text-rose-400 text-base">${book} Chapter ${chapter} (${versionId})</h4>
-                        <p class="text-xs text-slate-300 leading-relaxed"><span class="text-rose-400 font-bold mr-1">1</span> In the beginning God created the heavens and the earth.</p>
-                        <p class="text-xs text-slate-300 leading-relaxed"><span class="text-rose-400 font-bold mr-1">2</span> Now the earth was formless and empty. Darkness was on the surface of the deep.</p>
-                    </div>
-                `;
+            // Render verses dynamically whether stored as an Array or Object map
+            if (versesFound) {
+                if (Array.isArray(versesFound)) {
+                    versesFound.forEach((vText, idx) => {
+                        const text = typeof vText === 'string' ? vText : (vText.text || vText.verse || vText.content || JSON.stringify(vText));
+                        verseHtml += `<p class="text-xs text-slate-300 leading-relaxed mb-2"><span class="text-rose-400 font-bold mr-1.5">${idx + 1}</span> ${text}</p>`;
+                    });
+                } else if (typeof versesFound === 'object') {
+                    Object.keys(versesFound).forEach(vKey => {
+                        const vText = versesFound[vKey];
+                        const text = typeof vText === 'string' ? vText : (vText.text || vText.verse || vText.content || JSON.stringify(vText));
+                        verseHtml += `<p class="text-xs text-slate-300 leading-relaxed mb-2"><span class="text-rose-400 font-bold mr-1.5">${vKey}</span> ${text}</p>`;
+                    });
+                }
             }
         } catch (err) {
-            console.warn('Reader parsing fallback:', err);
-            verseHtml = `<p class="text-xs text-slate-300">Scripture loaded successfully.</p>`;
+            console.error('Universal Bible Parser Error:', err);
+        }
+
+        if (!verseHtml.includes('class="text-xs text-slate-300')) {
+            verseHtml += `<p class="text-xs text-rose-300 italic py-4">Verses could not be mapped for ${book} ${chapter} in ${versionDisplayName}.</p>`;
         }
 
         bibleReaderContent.innerHTML = verseHtml;
+        const refEl = document.getElementById('bibleReadingReference');
+        if (refEl) refEl.textContent = `${book} ${chapter} (${versionDisplayName})`;
     }
 
     document.getElementById('downloadVerseImgBtn')?.addEventListener('click', () => {
