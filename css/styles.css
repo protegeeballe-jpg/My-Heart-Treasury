@@ -787,3 +787,43 @@ button, label {
         padding-inline: 0.6rem;
     }
 }
+
+/* Compact highlight toolbar — target its existing structure */
+#bibleStudyModal #bibleReaderContent >
+.flex.flex-wrap.items-center.gap-2 {
+    gap: 0.35rem !important;
+    padding: 0.35rem !important;
+    margin-bottom: 0.55rem !important;
+}
+
+/* Highlight color dropdown */
+#bibleStudyModal #bibleReaderContent >
+.flex.flex-wrap.items-center.gap-2 > select {
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 0.2rem 0.45rem !important;
+    font-size: 12px !important;
+    border-radius: 7px;
+}
+
+/* Apply and Remove Highlight */
+#bibleStudyModal #bibleReaderContent >
+.flex.flex-wrap.items-center.gap-2 > button {
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 0.25rem 0.5rem !important;
+    font-size: 11px !important;
+    line-height: 1.15 !important;
+    border-radius: 7px;
+}
+
+/* Keep controls comfortable to tap on phones */
+@media (max-width: 640px) {
+    #bibleStudyModal #bibleReaderContent >
+    .flex.flex-wrap.items-center.gap-2 > select,
+    #bibleStudyModal #bibleReaderContent >
+    .flex.flex-wrap.items-center.gap-2 > button {
+        height: 40px !important;
+        min-height: 40px !important;
+    }
+}
