@@ -95,6 +95,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         let selectedVerses = new Map();
         let selectionStatusElement = null;
         let readerRequestToken = 0;
+        let verseOfDayRequestToken = 0;
+        let currentVerseOfDay = null;
+        let verseOfDayRefreshTimer = null;
+        let highlightColorSelect = null;
+        let applyHighlightButton = null;
+        let removeHighlightButton = null;
+        let highlightStatusElement = null;
+        const BIBLE_VERSION_PREFERENCE_KEY = 'myHeartTreasury.selectedBibleVersion';
+        const HIGHLIGHT_STYLE_MAP = {
+            yellow: { backgroundColor: 'rgba(250, 204, 21, 0.22)', borderLeft: '3px solid #eab308' },
+            green: { backgroundColor: 'rgba(34, 197, 94, 0.20)', borderLeft: '3px solid #22c55e' },
+            blue: { backgroundColor: 'rgba(59, 130, 246, 0.20)', borderLeft: '3px solid #3b82f6' },
+            pink: { backgroundColor: 'rgba(236, 72, 153, 0.20)', borderLeft: '3px solid #ec4899' }
+        };
 
         const selectClasses = 'w-full bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-rose-500';
 
@@ -190,6 +204,25 @@ document.addEventListener('DOMContentLoaded', async () => {
             return BibleController.versions.find(version => version.id === versionId) || null;
         }
 
+        function loadPreferredBibleVersion() {
+            try {
+                const savedVersionId = localStorage.getItem(BIBLE_VERSION_PREFERENCE_KEY);
+                if (savedVersionId && getVersion(savedVersionId)) {
+                    BibleController.currentVersion = savedVersionId;
+                }
+            } catch (error) {
+                console.warn('[BibleViewer] Could not read the saved Bible preference:', error);
+            }
+        }
+
+        function savePreferredBibleVersion(versionId) {
+            try {
+                localStorage.setItem(BIBLE_VERSION_PREFERENCE_KEY, versionId);
+            } catch (error) {
+                console.warn('[BibleViewer] Could not save the Bible preference:', error);
+            }
+        }
+
         function getSelectedVersionLabel() {
             const version = getVersion(BibleController.currentVersion);
             return version ? version.name : BibleController.currentVersion;
@@ -226,7 +259,63 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (selectionStatusElement) {
                 selectionStatusElement.textContent =
-                    `${selected.length} verse(s) selected. Select one verse for an image, or one or more verses to attach.`;
+                    `${selected.length} verse(s) selected. Select one verse for an image, or one or more verses to attach or highlight.`;
+            }
+
+            if (applyHighlightButton) {
+                applyHighlightButton.disabled = selected.length === 0;
+                applyHighlightButton.style.opacity = selected.length > 0 ? '1' : '0.5';
+            }
+            if (removeHighlightButton) {
+                removeHighlightButton.disabled = selected.length === 0;
+                removeHighlightButton.style.opacity = selected.length > 0 ? '1' : '0.5';
+            }
+        }
+
+        async function applyHighlightToSelected(remove = false) {
+            const selected = getSelectedVerseRows();
+            if (selected.length === 0) return;
+
+            const methodName = remove ? 'removeHighlight' : 'saveHighlight';
+            if (typeof BibleController[methodName] !== 'function') {
+                if (highlightStatusElement) highlightStatusElement.textContent = 'Highlight storage is unavailable.';
+                return;
+            }
+
+            const versionId = BibleController.currentVersion;
+            const book = currentBibleBook;
+            const chapter = currentBibleChapter;
+            const color = highlightColorSelect ? highlightColorSelect.value : 'yellow';
+            if (!remove && !BibleController.highlightColors.includes(color)) {
+                if (highlightStatusElement) highlightStatusElement.textContent = 'Choose a valid highlight color.';
+                return;
+            }
+
+            if (applyHighlightButton) applyHighlightButton.disabled = true;
+            if (removeHighlightButton) removeHighlightButton.disabled = true;
+            if (highlightStatusElement) highlightStatusElement.textContent = remove ? 'Removing highlights...' : 'Saving highlights...';
+
+            try {
+                for (const item of selected) {
+                    if (remove) {
+                        await BibleController.removeHighlight(versionId, book, chapter, item.verse);
+                    } else {
+                        await BibleController.saveHighlight(versionId, book, chapter, item.verse, color);
+                    }
+                }
+                selectedVerses.clear();
+                await renderChapter(++readerRequestToken);
+                if (highlightStatusElement) {
+                    highlightStatusElement.textContent = remove
+                        ? `${selected.length} highlight(s) removed.`
+                        : `${selected.length} verse(s) highlighted ${color}.`;
+                }
+            } catch (error) {
+                console.error('[BibleViewer] Highlight operation failed:', error);
+                if (highlightStatusElement) {
+                    highlightStatusElement.textContent = 'Highlights could not be saved. Your Bible text remains unchanged.';
+                }
+                updateVerseActionButtons();
             }
         }
 
@@ -248,25 +337,57 @@ document.addEventListener('DOMContentLoaded', async () => {
                 bibleVersionSelect.appendChild(option);
             });
 
+            loadPreferredBibleVersion();
             if (!getVersion(BibleController.currentVersion)) {
                 BibleController.currentVersion = validVersions[0].id;
             }
             bibleVersionSelect.value = BibleController.currentVersion;
+            savePreferredBibleVersion(BibleController.currentVersion);
         }
 
-        function renderVerseOfDay() {
+        function scheduleNextDailyVerseRefresh() {
+            if (verseOfDayRefreshTimer !== null) clearTimeout(verseOfDayRefreshTimer);
+            const now = new Date();
+            const nextLocalMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 2);
+            const delay = Math.max(1000, nextLocalMidnight.getTime() - now.getTime());
+            verseOfDayRefreshTimer = setTimeout(() => {
+                renderVerseOfDay();
+            }, delay);
+        }
+
+        async function renderVerseOfDay() {
             if (typeof BibleController.getVerseOfTheDay !== 'function') {
+                currentVerseOfDay = null;
                 if (vodText) vodText.textContent = 'Verse of the Day is unavailable.';
-                return;
+                return null;
             }
 
-            const verseOfDay = BibleController.getVerseOfTheDay();
-            if (!verseOfDay || typeof verseOfDay.text !== 'string' || typeof verseOfDay.reference !== 'string') {
-                if (vodText) vodText.textContent = 'Verse of the Day is unavailable.';
-                return;
-            }
+            const requestToken = ++verseOfDayRequestToken;
+            const versionId = BibleController.currentVersion;
+            if (vodText) vodText.textContent = `Loading today's verse from ${getSelectedVersionLabel()}...`;
 
-            if (vodText) vodText.textContent = `"${verseOfDay.text}" — ${verseOfDay.reference}`;
+            try {
+                const verseOfDay = await BibleController.getVerseOfTheDay(versionId);
+                if (requestToken !== verseOfDayRequestToken || versionId !== BibleController.currentVersion) return null;
+                if (!verseOfDay || typeof verseOfDay.text !== 'string' || !verseOfDay.text.trim() ||
+                    typeof verseOfDay.reference !== 'string' || !verseOfDay.reference.trim()) {
+                    currentVerseOfDay = null;
+                    if (vodText) vodText.textContent = `No valid Verse of the Day is available in ${getSelectedVersionLabel()}.`;
+                    return null;
+                }
+
+                currentVerseOfDay = verseOfDay;
+                if (vodText) {
+                    vodText.textContent = `"${verseOfDay.text}" — ${verseOfDay.reference} (${getSelectedVersionLabel()})`;
+                }
+                scheduleNextDailyVerseRefresh();
+                return verseOfDay;
+            } catch (error) {
+                console.error('[BibleViewer] Verse-of-the-day retrieval failed:', error);
+                currentVerseOfDay = null;
+                if (vodText) vodText.textContent = 'Unable to load the Verse of the Day from the selected translation.';
+                return null;
+            }
         }
 
         async function renderChapter(requestToken) {
@@ -341,27 +462,86 @@ document.addEventListener('DOMContentLoaded', async () => {
                     return;
                 }
 
+                let chapterHighlights = Object.create(null);
+                if (typeof BibleController.getChapterHighlights === 'function') {
+                    try {
+                        chapterHighlights = await BibleController.getChapterHighlights(versionId, book, Number(chapter));
+                    } catch (highlightError) {
+                        console.warn('[BibleViewer] Saved highlights could not be loaded:', highlightError);
+                        chapterHighlights = Object.create(null);
+                    }
+                    if (requestToken !== readerRequestToken) return;
+                }
+
                 const heading = document.createElement('h4');
                 heading.className = 'font-bold text-rose-400 text-base mb-2';
                 heading.textContent = `${book} Chapter ${chapter} (${versionName})`;
 
                 const hint = document.createElement('p');
                 hint.className = 'text-[10px] text-slate-500 mb-3';
-                hint.textContent = 'Tick the verses you want to attach. The image action requires exactly one selected verse.';
+                hint.textContent = 'Select verses to attach, create an image, or highlight. Highlights are saved separately for each translation.';
+
+                const highlightToolbar = document.createElement('div');
+                highlightToolbar.className = 'flex flex-wrap items-center gap-2 mb-3 p-2 rounded-xl bg-slate-800/60 border border-slate-700/70';
+
+                highlightColorSelect = document.createElement('select');
+                highlightColorSelect.className = 'bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded-lg px-2 py-2';
+                highlightColorSelect.setAttribute('aria-label', 'Highlight color');
+                const colorLabels = [
+                    ['yellow', 'Yellow'], ['green', 'Green'], ['blue', 'Blue'], ['pink', 'Pink']
+                ];
+                colorLabels.forEach(([value, label]) => {
+                    const option = document.createElement('option');
+                    option.value = value;
+                    option.textContent = label;
+                    highlightColorSelect.appendChild(option);
+                });
+
+                applyHighlightButton = document.createElement('button');
+                applyHighlightButton.type = 'button';
+                applyHighlightButton.className = 'px-3 py-2 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-200 border border-amber-500/40';
+                applyHighlightButton.textContent = 'Apply Highlight';
+                applyHighlightButton.disabled = true;
+                applyHighlightButton.addEventListener('click', () => applyHighlightToSelected(false));
+
+                removeHighlightButton = document.createElement('button');
+                removeHighlightButton.type = 'button';
+                removeHighlightButton.className = 'px-3 py-2 rounded-lg text-xs font-semibold bg-slate-700 text-slate-200 border border-slate-600';
+                removeHighlightButton.textContent = 'Remove Highlight';
+                removeHighlightButton.disabled = true;
+                removeHighlightButton.addEventListener('click', () => applyHighlightToSelected(true));
+
+                highlightStatusElement = document.createElement('span');
+                highlightStatusElement.className = 'text-[10px] text-slate-400';
+                highlightStatusElement.setAttribute('aria-live', 'polite');
+                if (typeof BibleController.getChapterHighlights !== 'function' ||
+                    typeof BibleController.saveHighlight !== 'function' ||
+                    typeof BibleController.removeHighlight !== 'function') {
+                    highlightStatusElement.textContent = 'Highlight storage is not available in this controller.';
+                    applyHighlightButton.disabled = true;
+                    removeHighlightButton.disabled = true;
+                }
+
+                highlightToolbar.append(highlightColorSelect, applyHighlightButton, removeHighlightButton, highlightStatusElement);
 
                 selectionStatusElement = document.createElement('p');
                 selectionStatusElement.className = 'text-[10px] text-rose-300 mb-3';
                 selectionStatusElement.setAttribute('aria-live', 'polite');
 
-                bibleReaderContent.replaceChildren(heading, hint, selectionStatusElement);
+                bibleReaderContent.replaceChildren(heading, hint, highlightToolbar, selectionStatusElement);
 
                 const verseFrequency = new Map();
                 rows.forEach(row => verseFrequency.set(row.verse, (verseFrequency.get(row.verse) || 0) + 1));
 
                 rows.forEach(row => {
                     const rowElement = document.createElement('label');
-                    rowElement.className = 'flex items-start gap-2 text-xs text-slate-300 leading-relaxed mb-2';
+                    rowElement.className = 'flex items-start gap-2 text-xs text-slate-300 leading-relaxed mb-2 rounded-lg px-2 py-2 -mx-2 transition-colors';
                     rowElement.style.cursor = row.text && row.text.trim() && verseFrequency.get(row.verse) === 1 ? 'pointer' : 'default';
+                    const savedColor = chapterHighlights[row.verse];
+                    if (savedColor && HIGHLIGHT_STYLE_MAP[savedColor]) {
+                        Object.assign(rowElement.style, HIGHLIGHT_STYLE_MAP[savedColor]);
+                        rowElement.title = `Highlighted ${savedColor}`;
+                    }
 
                     const checkbox = document.createElement('input');
                     checkbox.type = 'checkbox';
@@ -573,10 +753,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         setupBibleNavigationControls();
         populateBibleVersions();
+        document.addEventListener('visibilitychange', () => {
+            // Refresh only after the Bible feature has already been opened once;
+            // this keeps the reader's translation JSON lazy-loaded at app startup.
+            if (!document.hidden && currentVerseOfDay) renderVerseOfDay();
+        });
 
         document.getElementById('openBibleModalBtn')?.addEventListener('click', async () => {
             bibleStudyModal.classList.remove('hidden');
-            renderVerseOfDay();
+            await renderVerseOfDay();
             await loadVersionAndNavigation(currentBibleBook, currentBibleChapter || 1);
             if (typeof lucide !== 'undefined' && typeof lucide.createIcons === 'function') {
                 lucide.createIcons();
@@ -594,6 +779,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 return;
             }
             BibleController.currentVersion = nextVersionId;
+            savePreferredBibleVersion(nextVersionId);
+            await renderVerseOfDay();
             await loadVersionAndNavigation(currentBibleBook, currentBibleChapter || 1);
         });
 
@@ -620,12 +807,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                     throw new Error('Verse-of-the-day or attachment service is unavailable.');
                 }
 
-                const verseOfDay = BibleController.getVerseOfTheDay();
-                if (!verseOfDay || typeof verseOfDay.text !== 'string' || typeof verseOfDay.reference !== 'string') {
-                    throw new Error('Verse-of-the-day data is incomplete.');
+                const verseOfDay = await BibleController.getVerseOfTheDay(BibleController.currentVersion);
+                if (!verseOfDay || typeof verseOfDay.text !== 'string' || !verseOfDay.text.trim() ||
+                    typeof verseOfDay.reference !== 'string' || !verseOfDay.reference.trim()) {
+                    throw new Error('No verified Verse-of-the-Day text is available in the selected translation.');
                 }
 
-                MediaController.setNoteAttachment(`Bible Verse (${verseOfDay.reference}): "${verseOfDay.text}"`);
+                MediaController.setNoteAttachment(`Bible Verse (${verseOfDay.reference}; ${verseOfDay.versionName}): "${verseOfDay.text}"`);
                 setAttachmentIndicator();
                 await showAppModal({
                     title: 'Verse Attached',
