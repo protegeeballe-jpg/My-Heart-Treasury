@@ -57,138 +57,682 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // ==========================================
-    // 📖 BIBLE STUDY MODULE CONTROLLER WIRING (AUDITED & BUG-FREE)
+    // BIBLE STUDY MODULE
+    // Isolated initialization: Bible errors must not interrupt Treasury startup.
+    // Uses the flat-array JSON contract implemented by BibleController.
     // ==========================================
-    const bibleStudyModal = document.getElementById('bibleStudyModal');
-    const bibleVersionSelect = document.getElementById('bibleVersionSelect');
-    const bibleReaderContent = document.getElementById('bibleReaderContent');
-    const vodText = document.getElementById('vodText');
+    function initializeBibleStudyModule() {
+        const bibleStudyModal = document.getElementById('bibleStudyModal');
+        const bibleVersionSelect = document.getElementById('bibleVersionSelect');
+        const bibleReaderContent = document.getElementById('bibleReaderContent');
+        const vodText = document.getElementById('vodText');
+        const attachVodBtn = document.getElementById('attachVodBtn');
+        const attachSelectedVersesBtn = document.getElementById('attachSelectedVersesBtn');
+        const downloadVerseImgBtn = document.getElementById('downloadVerseImgBtn');
+        const attachmentIndicator = document.getElementById('attachmentIndicator');
+        const referenceElement = document.getElementById('bibleReadingReference');
 
-    document.getElementById('openBibleModalBtn')?.addEventListener('click', async () => {
-        bibleStudyModal?.classList.remove('hidden');
-        populateBibleVersions();
-        await loadAndRenderChapter('Genesis', 1, BibleController.currentVersion);
-        renderVerseOfDay();
-        if (typeof lucide !== 'undefined') lucide.createIcons();
-    });
-
-    document.getElementById('closeBibleModalBtn')?.addEventListener('click', () => {
-        bibleStudyModal?.classList.add('hidden');
-    });
-
-    function populateBibleVersions() {
-        if (!bibleVersionSelect) return;
-        bibleVersionSelect.innerHTML = '';
-        BibleController.versions.forEach(v => {
-            const opt = document.createElement('option');
-            opt.value = v.id;
-            opt.textContent = `${v.name} (${v.lang})`;
-            if (v.id === BibleController.currentVersion) opt.selected = true;
-            bibleVersionSelect.appendChild(opt);
-        });
-    }
-
-    bibleVersionSelect?.addEventListener('change', async (e) => {
-        BibleController.currentVersion = e.target.value;
-        await loadAndRenderChapter('Genesis', 1, BibleController.currentVersion);
-    });
-
-    function renderVerseOfDay() {
-        const vod = BibleController.getVerseOfTheDay();
-        if (vodText) vodText.textContent = `"${vod.text}" — ${vod.reference}`;
-    }
-
-    document.getElementById('attachVodBtn')?.addEventListener('click', async () => {
-        const vod = BibleController.getVerseOfTheDay();
-        MediaController.setNoteAttachment(`Bible Verse (${vod.reference}): "${vod.text}"`);
-        const indicator = document.getElementById('attachmentIndicator');
-        if (indicator) {
-            indicator.textContent = "Attached ✓";
-            indicator.classList.add('text-rose-400', 'font-bold');
+        if (!bibleStudyModal || !bibleVersionSelect || !bibleReaderContent) {
+            console.warn('[BibleViewer] Bible reader markup is incomplete. Core Treasury startup will continue.');
+            return;
         }
-        await showAppModal({
-            title: "Verse Attached",
-            message: `✨ ${vod.reference} attached to your heart deposit! Click 'Save Vault' to store it.`,
-            icon: "📖"
-        });
-    });
 
-  async function loadAndRenderChapter(book, chapter, versionId) {
-        if (!bibleReaderContent) return;
-        bibleReaderContent.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">Loading scripture for ${versionId}...</p>`;
+        if (typeof BibleController === 'undefined' ||
+            !Array.isArray(BibleController.versions) ||
+            typeof BibleController.getVersionData !== 'function' ||
+            typeof BibleController.getBooks !== 'function' ||
+            typeof BibleController.getChapters !== 'function' ||
+            typeof BibleController.getChapter !== 'function') {
+            showReaderMessage('The Bible reader controller is unavailable. Please check that js/bible.js loads before js/app.js.');
+            console.error('[BibleViewer] BibleController is missing or does not expose the required flat-array methods.');
+            return;
+        }
 
-        // Find the human-readable display name for the header
-        const versionObj = BibleController.versions.find(v => v.id === versionId);
-        const versionDisplayName = versionObj ? versionObj.name : versionId;
+        let bibleBookSelect = document.getElementById('bibleBookSelect');
+        let bibleChapterSelect = document.getElementById('bibleChapterSelect');
+        let currentBibleBook = null;
+        let currentBibleChapter = null;
+        let selectedVerses = new Map();
+        let selectionStatusElement = null;
+        let readerRequestToken = 0;
 
-        try {
-            // 🚀 Safely fetch filtered verses from the flat array via BibleController helper
-            const targetChapter = parseInt(chapter, 10) || 1;
-            const verses = await BibleController.getChapter(versionId, book, targetChapter);
+        const selectClasses = 'w-full bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-rose-500';
 
-            if (!verses || verses.length === 0) {
-                bibleReaderContent.innerHTML = `
-                    <div class="p-4 text-center space-y-2">
-                        <p class="text-xs text-rose-400 font-bold">⚠️ Verses could not be mapped for ${book} Chapter ${targetChapter} in ${versionDisplayName}.</p>
-                        <p class="text-[11px] text-slate-400">Make sure your flat-array JSON file contains matching book names and chapter numbers.</p>
-                    </div>
-                `;
+        function showReaderMessage(message, detail) {
+            if (!bibleReaderContent) return;
+            bibleReaderContent.replaceChildren();
+
+            const messageElement = document.createElement('p');
+            messageElement.className = 'text-xs text-rose-300 italic py-4';
+            messageElement.textContent = message;
+            bibleReaderContent.appendChild(messageElement);
+
+            if (detail) {
+                const detailElement = document.createElement('p');
+                detailElement.className = 'text-[11px] text-slate-400 pb-3';
+                detailElement.textContent = detail;
+                bibleReaderContent.appendChild(detailElement);
+            }
+        }
+
+        function createSelectField(selectId, labelText) {
+            const field = document.createElement('label');
+            field.className = 'flex flex-col gap-1 min-w-0';
+
+            const label = document.createElement('span');
+            label.className = 'text-[10px] text-slate-400 font-semibold uppercase tracking-wide';
+            label.textContent = labelText;
+
+            const select = document.createElement('select');
+            select.id = selectId;
+            select.className = selectClasses;
+            select.setAttribute('aria-label', labelText);
+
+            field.append(label, select);
+            return { field, select };
+        }
+
+        function setupBibleNavigationControls() {
+            const toolbar = bibleVersionSelect.parentElement;
+            if (!toolbar) {
+                throw new Error('Bible version selector has no toolbar parent.');
+            }
+
+            // Add labels and the two navigation selectors without requiring an HTML-file change.
+            toolbar.className = 'grid grid-cols-1 sm:grid-cols-3 gap-2 py-3 border-b border-slate-800/60';
+
+            const versionField = document.createElement('label');
+            versionField.className = 'flex flex-col gap-1 min-w-0';
+            const versionLabel = document.createElement('span');
+            versionLabel.className = 'text-[10px] text-slate-400 font-semibold uppercase tracking-wide';
+            versionLabel.textContent = 'Translation';
+            versionField.appendChild(versionLabel);
+            versionField.appendChild(bibleVersionSelect);
+            bibleVersionSelect.className = selectClasses;
+            bibleVersionSelect.setAttribute('aria-label', 'Bible translation');
+            toolbar.insertBefore(versionField, toolbar.firstChild);
+
+            if (!bibleBookSelect) {
+                const bookField = createSelectField('bibleBookSelect', 'Book');
+                bibleBookSelect = bookField.select;
+                toolbar.appendChild(bookField.field);
+            }
+
+            if (!bibleChapterSelect) {
+                const chapterField = createSelectField('bibleChapterSelect', 'Chapter');
+                bibleChapterSelect = chapterField.select;
+                toolbar.appendChild(chapterField.field);
+            }
+
+            bibleBookSelect.className = selectClasses;
+            bibleChapterSelect.className = selectClasses;
+            bibleBookSelect.setAttribute('aria-label', 'Bible book');
+            bibleChapterSelect.setAttribute('aria-label', 'Bible chapter');
+        }
+
+        function appendOptions(select, values, selectedValue) {
+            select.replaceChildren();
+            values.forEach((value) => {
+                const option = document.createElement('option');
+                option.value = String(value);
+                option.textContent = String(value);
+                select.appendChild(option);
+            });
+
+            if (values.some(value => String(value) === String(selectedValue))) {
+                select.value = String(selectedValue);
+            } else if (values.length > 0) {
+                select.selectedIndex = 0;
+            }
+        }
+
+        function getVersion(versionId) {
+            return BibleController.versions.find(version => version.id === versionId) || null;
+        }
+
+        function getSelectedVersionLabel() {
+            const version = getVersion(BibleController.currentVersion);
+            return version ? version.name : BibleController.currentVersion;
+        }
+
+        function getSelectedVerseRows() {
+            return Array.from(selectedVerses.entries())
+                .map(([verse, text]) => ({ verse: Number(verse), text }))
+                .sort((a, b) => a.verse - b.verse);
+        }
+
+        function updateVerseActionButtons() {
+            const selected = getSelectedVerseRows();
+            const canAttach = selected.length > 0;
+            const canDownloadImage = selected.length === 1;
+
+            if (attachSelectedVersesBtn) {
+                attachSelectedVersesBtn.disabled = !canAttach;
+                attachSelectedVersesBtn.style.opacity = canAttach ? '1' : '0.5';
+                attachSelectedVersesBtn.style.cursor = canAttach ? 'pointer' : 'not-allowed';
+                attachSelectedVersesBtn.title = canAttach
+                    ? `${selected.length} verse(s) selected for attachment`
+                    : 'Select at least one verse to attach';
+            }
+
+            if (downloadVerseImgBtn) {
+                downloadVerseImgBtn.disabled = !canDownloadImage;
+                downloadVerseImgBtn.style.opacity = canDownloadImage ? '1' : '0.5';
+                downloadVerseImgBtn.style.cursor = canDownloadImage ? 'pointer' : 'not-allowed';
+                downloadVerseImgBtn.title = canDownloadImage
+                    ? 'Download an image of the selected verse'
+                    : 'Select exactly one verse to create an image';
+            }
+
+            if (selectionStatusElement) {
+                selectionStatusElement.textContent =
+                    `${selected.length} verse(s) selected. Select one verse for an image, or one or more verses to attach.`;
+            }
+        }
+
+        function populateBibleVersions() {
+            const validVersions = BibleController.versions.filter(version =>
+                version && typeof version.id === 'string' && typeof version.file === 'string'
+            );
+
+            if (validVersions.length === 0) {
+                throw new Error('No valid Bible translations are listed in BibleController.versions.');
+            }
+
+            // Populate the translation selector directly from the version catalog.
+            bibleVersionSelect.replaceChildren();
+            validVersions.forEach(version => {
+                const option = document.createElement('option');
+                option.value = version.id;
+                option.textContent = `${version.name} (${version.lang || 'Language not specified'})`;
+                bibleVersionSelect.appendChild(option);
+            });
+
+            if (!getVersion(BibleController.currentVersion)) {
+                BibleController.currentVersion = validVersions[0].id;
+            }
+            bibleVersionSelect.value = BibleController.currentVersion;
+        }
+
+        function renderVerseOfDay() {
+            if (typeof BibleController.getVerseOfTheDay !== 'function') {
+                if (vodText) vodText.textContent = 'Verse of the Day is unavailable.';
                 return;
             }
 
-            // Build Header
-            let verseHtml = `<h4 class="font-bold text-rose-400 text-base mb-3">${book} Chapter ${targetChapter} (${versionDisplayName})</h4>`;
-            
-            // Render each verse dynamically from the flat array items
-            verses.forEach(v => {
-                const verseNum = v.verse || '';
-                const text = v.text || '';
-                verseHtml += `<p class="text-xs text-slate-300 leading-relaxed mb-2"><span class="text-rose-400 font-bold mr-1.5">${verseNum}</span> ${text}</p>`;
-            });
+            const verseOfDay = BibleController.getVerseOfTheDay();
+            if (!verseOfDay || typeof verseOfDay.text !== 'string' || typeof verseOfDay.reference !== 'string') {
+                if (vodText) vodText.textContent = 'Verse of the Day is unavailable.';
+                return;
+            }
 
-            bibleReaderContent.innerHTML = verseHtml;
-            const refEl = document.getElementById('bibleReadingReference');
-            if (refEl) refEl.textContent = `${book} ${targetChapter} (${versionDisplayName})`;
-
-        } catch (err) {
-            console.error('Flat-Array Reader Error:', err);
-            bibleReaderContent.innerHTML = `<p class="text-xs text-rose-300 italic py-4">Error loading verses for ${book} ${chapter}.</p>`;
-        }
-    }
-
-        if (!verseHtml.includes('class="text-xs text-slate-300')) {
-            verseHtml += `<p class="text-xs text-rose-300 italic py-4">Verses could not be mapped for ${book} ${chapter} in ${versionDisplayName}.</p>`;
+            if (vodText) vodText.textContent = `"${verseOfDay.text}" — ${verseOfDay.reference}`;
         }
 
-        bibleReaderContent.innerHTML = verseHtml;
-        const refEl = document.getElementById('bibleReadingReference');
-        if (refEl) refEl.textContent = `${book} ${chapter} (${versionDisplayName})`;
-    }
+        async function renderChapter(requestToken) {
+            const versionId = BibleController.currentVersion;
+            const version = getVersion(versionId);
+            const versionName = version ? version.name : versionId;
+            const book = currentBibleBook;
+            const chapter = currentBibleChapter;
 
-    document.getElementById('downloadVerseImgBtn')?.addEventListener('click', () => {
-        const selectedLabel = bibleVersionSelect ? bibleVersionSelect.options[bibleVersionSelect.selectedIndex].text : "Bible";
-        BibleController.generateVerseImage(
-            "In the beginning God created the heavens and the earth.",
-            "Genesis 1:1",
-            selectedLabel
-        );
-    });
+            selectedVerses.clear();
+            selectionStatusElement = null;
+            updateVerseActionButtons();
 
-    document.getElementById('attachSelectedVersesBtn')?.addEventListener('click', async () => {
-        MediaController.setNoteAttachment(`Genesis 1:1-2 - "In the beginning God created the heavens and the earth."`);
-        const indicator = document.getElementById('attachmentIndicator');
-        if (indicator) {
-            indicator.textContent = "Attached ✓";
-            indicator.classList.add('text-rose-400', 'font-bold');
+            if (!book || !Number.isSafeInteger(Number(chapter)) || Number(chapter) < 1) {
+                showReaderMessage('Choose a valid book and chapter to read.');
+                return;
+            }
+
+            if (referenceElement) referenceElement.textContent = `${book} ${chapter} (${versionName})`;
+            bibleReaderContent.replaceChildren();
+            const loadingMessage = document.createElement('p');
+            loadingMessage.className = 'text-xs text-slate-400 text-center py-6';
+            loadingMessage.textContent = `Loading ${book} ${chapter} (${versionName})...`;
+            bibleReaderContent.appendChild(loadingMessage);
+
+            try {
+                const verses = await BibleController.getChapter(versionId, book, Number(chapter));
+                if (requestToken !== readerRequestToken) return;
+
+                if (!Array.isArray(verses)) {
+                    showReaderMessage('The Bible controller returned an unsupported chapter result.');
+                    return;
+                }
+
+                const chapterRecords = verses.filter(record =>
+                    record &&
+                    typeof record === 'object' &&
+                    typeof record.book === 'string' &&
+                    record.book.trim().toUpperCase() === book.trim().toUpperCase() &&
+                    Number(record.chapter) === Number(chapter)
+                );
+
+                if (chapterRecords.length === 0) {
+                    showReaderMessage(
+                        `No verse records were found for ${book} ${chapter} in ${versionName}.`,
+                        'The reader does not substitute text from another translation or invent missing verses.'
+                    );
+                    if (referenceElement) referenceElement.textContent = `${book} ${chapter} (${versionName})`;
+                    return;
+                }
+
+                const rows = [];
+                let invalidRecordCount = 0;
+                chapterRecords.forEach(record => {
+                    const verseNumber = Number(record.verse);
+                    if (!Number.isSafeInteger(verseNumber) || verseNumber < 1) {
+                        invalidRecordCount += 1;
+                        return;
+                    }
+                    rows.push({
+                        verse: verseNumber,
+                        text: typeof record.text === 'string' ? record.text : null
+                    });
+                });
+
+                rows.sort((a, b) => a.verse - b.verse);
+                if (rows.length === 0) {
+                    showReaderMessage(
+                        `Records were found for ${book} ${chapter}, but none had a valid verse number.`,
+                        'Check the JSON records for numeric verse fields.'
+                    );
+                    return;
+                }
+
+                const heading = document.createElement('h4');
+                heading.className = 'font-bold text-rose-400 text-base mb-2';
+                heading.textContent = `${book} Chapter ${chapter} (${versionName})`;
+
+                const hint = document.createElement('p');
+                hint.className = 'text-[10px] text-slate-500 mb-3';
+                hint.textContent = 'Tick the verses you want to attach. The image action requires exactly one selected verse.';
+
+                selectionStatusElement = document.createElement('p');
+                selectionStatusElement.className = 'text-[10px] text-rose-300 mb-3';
+                selectionStatusElement.setAttribute('aria-live', 'polite');
+
+                bibleReaderContent.replaceChildren(heading, hint, selectionStatusElement);
+
+                const verseFrequency = new Map();
+                rows.forEach(row => verseFrequency.set(row.verse, (verseFrequency.get(row.verse) || 0) + 1));
+
+                rows.forEach(row => {
+                    const rowElement = document.createElement('label');
+                    rowElement.className = 'flex items-start gap-2 text-xs text-slate-300 leading-relaxed mb-2';
+                    rowElement.style.cursor = row.text && row.text.trim() && verseFrequency.get(row.verse) === 1 ? 'pointer' : 'default';
+
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.className = 'mt-1 shrink-0 accent-rose-500';
+                    checkbox.value = String(row.verse);
+                    checkbox.setAttribute('aria-label', `${book} ${chapter}:${row.verse}`);
+
+                    const verseText = document.createElement('span');
+                    verseText.className = 'min-w-0 whitespace-pre-wrap';
+
+                    const verseNumber = document.createElement('strong');
+                    verseNumber.className = 'text-rose-400 font-bold mr-1.5';
+                    verseNumber.textContent = `${row.verse}`;
+                    verseText.appendChild(verseNumber);
+
+                    const bodyText = document.createElement('span');
+                    if (typeof row.text === 'string' && row.text.trim().length > 0) {
+                        bodyText.textContent = ` ${row.text}`;
+                    } else {
+                        bodyText.className = 'text-amber-300 italic';
+                        bodyText.textContent = ' [Text unavailable in this translation file.]';
+                        checkbox.disabled = true;
+                        checkbox.title = 'This verse record has no text and cannot be selected.';
+                    }
+
+                    if (verseFrequency.get(row.verse) > 1) {
+                        checkbox.disabled = true;
+                        checkbox.title = 'Duplicate verse number in this chapter; selection is disabled to avoid an ambiguous reference.';
+                        const duplicateNotice = document.createElement('span');
+                        duplicateNotice.className = 'text-amber-300 italic';
+                        duplicateNotice.textContent = ' [Duplicate verse number; selection disabled.]';
+                        verseText.appendChild(duplicateNotice);
+                    }
+
+                    verseText.appendChild(bodyText);
+                    rowElement.append(checkbox, verseText);
+                    bibleReaderContent.appendChild(rowElement);
+
+                    checkbox.addEventListener('change', () => {
+                        if (checkbox.checked) {
+                            selectedVerses.set(row.verse, row.text);
+                        } else {
+                            selectedVerses.delete(row.verse);
+                        }
+                        updateVerseActionButtons();
+                    });
+                });
+
+                if (invalidRecordCount > 0) {
+                    const warning = document.createElement('p');
+                    warning.className = 'text-[10px] text-amber-300 mt-3';
+                    warning.textContent = `${invalidRecordCount} record(s) were not displayed because the verse number was missing or invalid.`;
+                    bibleReaderContent.appendChild(warning);
+                }
+
+                if (rows.some(row => typeof row.text !== 'string' || row.text.trim().length === 0)) {
+                    const warning = document.createElement('p');
+                    warning.className = 'text-[10px] text-amber-300 mt-2';
+                    warning.textContent = 'One or more verse records have no text in this file. No replacement wording has been inserted.';
+                    bibleReaderContent.appendChild(warning);
+                }
+
+                if (referenceElement) referenceElement.textContent = `${book} ${chapter} (${versionName})`;
+                updateVerseActionButtons();
+            } catch (error) {
+                if (requestToken !== readerRequestToken) return;
+                console.error('[BibleViewer] Chapter loading failed:', error);
+                showReaderMessage(
+                    `Unable to load ${book} ${chapter} from ${versionName}.`,
+                    'Check the browser console and the translation JSON file for the specific error.'
+                );
+            }
         }
-        bibleStudyModal?.classList.add('hidden');
-        await showAppModal({
-            title: "Verses Attached",
-            message: "✨ Selected Bible verses attached to your heart deposit successfully!",
-            icon: "📖"
+
+        async function loadChaptersForBook(preferredChapter) {
+            const requestToken = ++readerRequestToken;
+            const versionId = BibleController.currentVersion;
+            const book = currentBibleBook;
+
+            selectedVerses.clear();
+            selectionStatusElement = null;
+            currentBibleChapter = null;
+            appendOptions(bibleChapterSelect, [], null);
+            updateVerseActionButtons();
+
+            try {
+                const chapters = await BibleController.getChapters(versionId, book);
+                if (requestToken !== readerRequestToken) return;
+
+                if (!Array.isArray(chapters)) {
+                    showReaderMessage('The Bible controller returned an invalid chapter list.');
+                    return;
+                }
+
+                const validChapters = Array.from(new Set(chapters
+                    .map(value => Number(value))
+                    .filter(value => Number.isSafeInteger(value) && value > 0)))
+                    .sort((a, b) => a - b);
+
+                if (validChapters.length === 0) {
+                    appendOptions(bibleChapterSelect, [], null);
+                    showReaderMessage(`No chapters were found for ${book} in ${getSelectedVersionLabel()}.`);
+                    return;
+                }
+
+                const chapterToRead = validChapters.includes(Number(preferredChapter))
+                    ? Number(preferredChapter)
+                    : validChapters[0];
+                appendOptions(bibleChapterSelect, validChapters, chapterToRead);
+                currentBibleChapter = chapterToRead;
+                await renderChapter(requestToken);
+            } catch (error) {
+                if (requestToken !== readerRequestToken) return;
+                console.error('[BibleViewer] Chapter navigation failed:', error);
+                showReaderMessage(`Unable to load the chapter list for ${book}.`);
+            }
+        }
+
+        async function loadVersionAndNavigation(preferredBook, preferredChapter) {
+            const requestToken = ++readerRequestToken;
+            const versionId = BibleController.currentVersion;
+            const version = getVersion(versionId);
+
+            selectedVerses.clear();
+            selectionStatusElement = null;
+            currentBibleBook = null;
+            currentBibleChapter = null;
+            appendOptions(bibleBookSelect, [], null);
+            appendOptions(bibleChapterSelect, [], null);
+            updateVerseActionButtons();
+            showReaderMessage(`Loading ${version ? version.name : versionId}...`);
+
+            try {
+                const data = await BibleController.getVersionData(versionId);
+                if (requestToken !== readerRequestToken) return;
+
+                if (!Array.isArray(data)) {
+                    showReaderMessage(
+                        `The file for ${version ? version.name : versionId} is missing or is not a flat-array JSON file.`,
+                        'Expected each verse record to contain book, chapter, verse, and text fields. No alternate translation will be substituted.'
+                    );
+                    return;
+                }
+
+                const hasValidFlatRecord = data.some(record =>
+                    record &&
+                    typeof record === 'object' &&
+                    typeof record.book === 'string' &&
+                    record.book.trim().length > 0 &&
+                    Number.isSafeInteger(Number(record.chapter)) &&
+                    Number(record.chapter) > 0 &&
+                    Number.isSafeInteger(Number(record.verse)) &&
+                    Number(record.verse) > 0 &&
+                    typeof record.text === 'string'
+                );
+
+                if (!hasValidFlatRecord) {
+                    showReaderMessage(
+                        `The file for ${version ? version.name : versionId} does not contain recognizable flat-array verse records.`,
+                        'Expected records shaped like { book, chapter, verse, text }. The reader will not guess another format.'
+                    );
+                    return;
+                }
+
+                const listedBooks = await BibleController.getBooks(versionId);
+                if (requestToken !== readerRequestToken) return;
+                if (!Array.isArray(listedBooks)) {
+                    showReaderMessage(`The book list could not be read for ${version ? version.name : versionId}.`);
+                    return;
+                }
+
+                const books = [];
+                const seenBooks = new Set();
+                listedBooks.forEach(value => {
+                    if (typeof value !== 'string' || !value.trim()) return;
+                    const cleanName = value.trim();
+                    const key = cleanName.toLocaleUpperCase();
+                    if (!seenBooks.has(key)) {
+                        seenBooks.add(key);
+                        books.push(cleanName);
+                    }
+                });
+
+                if (books.length === 0) {
+                    showReaderMessage(`No book names were found in ${version ? version.name : versionId}.`);
+                    return;
+                }
+
+                const sameBook = books.find(name => name.toLocaleUpperCase() === String(preferredBook || '').trim().toLocaleUpperCase());
+                const genesisBook = books.find(name => name.toLocaleUpperCase() === 'GENESIS');
+                currentBibleBook = sameBook || genesisBook || books[0];
+                appendOptions(bibleBookSelect, books, currentBibleBook);
+                await loadChaptersForBook(preferredChapter);
+            } catch (error) {
+                if (requestToken !== readerRequestToken) return;
+                console.error('[BibleViewer] Translation loading failed:', error);
+                showReaderMessage(
+                    `Unable to load ${version ? version.name : versionId}.`,
+                    'Confirm that the JSON file exists under the app\'s bible/ folder and is valid JSON.'
+                );
+            }
+        }
+
+        function setAttachmentIndicator() {
+            if (!attachmentIndicator) return;
+            attachmentIndicator.textContent = 'Attached ✓';
+            attachmentIndicator.classList.add('text-rose-400', 'font-bold');
+        }
+
+        setupBibleNavigationControls();
+        populateBibleVersions();
+
+        document.getElementById('openBibleModalBtn')?.addEventListener('click', async () => {
+            bibleStudyModal.classList.remove('hidden');
+            renderVerseOfDay();
+            await loadVersionAndNavigation(currentBibleBook, currentBibleChapter || 1);
+            if (typeof lucide !== 'undefined' && typeof lucide.createIcons === 'function') {
+                lucide.createIcons();
+            }
         });
-    });
-    
+
+        document.getElementById('closeBibleModalBtn')?.addEventListener('click', () => {
+            bibleStudyModal.classList.add('hidden');
+        });
+
+        bibleVersionSelect.addEventListener('change', async (event) => {
+            const nextVersionId = event.target.value;
+            if (!getVersion(nextVersionId)) {
+                showReaderMessage('The selected Bible translation is not listed in BibleController.versions.');
+                return;
+            }
+            BibleController.currentVersion = nextVersionId;
+            await loadVersionAndNavigation(currentBibleBook, currentBibleChapter || 1);
+        });
+
+        bibleBookSelect.addEventListener('change', async (event) => {
+            currentBibleBook = event.target.value;
+            await loadChaptersForBook(currentBibleChapter || 1);
+        });
+
+        bibleChapterSelect.addEventListener('change', async (event) => {
+            const chapter = Number(event.target.value);
+            if (!Number.isSafeInteger(chapter) || chapter < 1) {
+                showReaderMessage('Choose a valid chapter number.');
+                return;
+            }
+            currentBibleChapter = chapter;
+            await renderChapter(++readerRequestToken);
+        });
+
+        attachVodBtn?.addEventListener('click', async () => {
+            try {
+                if (typeof BibleController.getVerseOfTheDay !== 'function' ||
+                    typeof MediaController === 'undefined' ||
+                    typeof MediaController.setNoteAttachment !== 'function') {
+                    throw new Error('Verse-of-the-day or attachment service is unavailable.');
+                }
+
+                const verseOfDay = BibleController.getVerseOfTheDay();
+                if (!verseOfDay || typeof verseOfDay.text !== 'string' || typeof verseOfDay.reference !== 'string') {
+                    throw new Error('Verse-of-the-day data is incomplete.');
+                }
+
+                MediaController.setNoteAttachment(`Bible Verse (${verseOfDay.reference}): "${verseOfDay.text}"`);
+                setAttachmentIndicator();
+                await showAppModal({
+                    title: 'Verse Attached',
+                    message: `${verseOfDay.reference} attached to your heart deposit. Click 'Save Vault' to store it.`,
+                    icon: '📖'
+                });
+            } catch (error) {
+                console.error('[BibleViewer] Verse-of-the-day attachment failed:', error);
+                await showAppModal({
+                    title: 'Attachment Failed',
+                    message: 'The Verse of the Day could not be attached. Please check the console for details.',
+                    icon: '⚠️'
+                });
+            }
+        });
+
+        attachSelectedVersesBtn?.addEventListener('click', async () => {
+            const selected = getSelectedVerseRows();
+            if (selected.length === 0) {
+                await showAppModal({
+                    title: 'No Verses Selected',
+                    message: 'Select one or more verses in the reader before attaching them.',
+                    icon: '📖'
+                });
+                return;
+            }
+
+            if (typeof MediaController === 'undefined' || typeof MediaController.setNoteAttachment !== 'function') {
+                await showAppModal({
+                    title: 'Attachment Unavailable',
+                    message: 'The app attachment service is unavailable. Your selected verses have not been attached.',
+                    icon: '⚠️'
+                });
+                return;
+            }
+
+            const versionName = getSelectedVersionLabel();
+            const verseNumbers = selected.map(item => item.verse).join(', ');
+            const reference = `${currentBibleBook} ${currentBibleChapter}:${verseNumbers}`;
+            const attachmentText = `Bible verses (${reference}; ${versionName}):\n${selected.map(item => `${item.verse}. ${item.text}`).join('\n')}`;
+
+            try {
+                MediaController.setNoteAttachment(attachmentText);
+                setAttachmentIndicator();
+                selectedVerses.clear();
+                if (selectionStatusElement) selectionStatusElement.textContent = 'Verses attached.';
+                updateVerseActionButtons();
+                bibleStudyModal.classList.add('hidden');
+                await showAppModal({
+                    title: 'Verses Attached',
+                    message: `${reference} (${versionName}) attached to your heart deposit. Click 'Save Vault' to store it.`,
+                    icon: '📖'
+                });
+            } catch (error) {
+                console.error('[BibleViewer] Selected-verse attachment failed:', error);
+                await showAppModal({
+                    title: 'Attachment Failed',
+                    message: 'The selected verses could not be attached. Your Treasury data has not been changed by this reader action.',
+                    icon: '⚠️'
+                });
+            }
+        });
+
+        downloadVerseImgBtn?.addEventListener('click', async () => {
+            const selected = getSelectedVerseRows();
+            if (selected.length !== 1) {
+                await showAppModal({
+                    title: 'Select One Verse',
+                    message: 'Choose exactly one verse before downloading a verse image.',
+                    icon: '🖼️'
+                });
+                return;
+            }
+
+            if (typeof BibleController.generateVerseImage !== 'function') {
+                await showAppModal({
+                    title: 'Image Export Unavailable',
+                    message: 'The Bible image generator is unavailable. No image was created.',
+                    icon: '⚠️'
+                });
+                return;
+            }
+
+            const verse = selected[0];
+            const reference = `${currentBibleBook} ${currentBibleChapter}:${verse.verse}`;
+            try {
+                BibleController.generateVerseImage(verse.text, reference, getSelectedVersionLabel());
+            } catch (error) {
+                console.error('[BibleViewer] Verse image generation failed:', error);
+                await showAppModal({
+                    title: 'Image Export Failed',
+                    message: 'The selected verse image could not be generated.',
+                    icon: '⚠️'
+                });
+            }
+        });
+
+        // Keep actions unavailable until actual verse records have been loaded and selected.
+        updateVerseActionButtons();
+    }
+
+    try {
+        initializeBibleStudyModule();
+    } catch (bibleInitError) {
+        console.error('[BibleViewer] Initialization failed; the rest of My Heart Treasury will continue:', bibleInitError);
+    }
+
     // App State & In-Memory Session PIN (Never saved to persistent storage)
     let currentHeartCount = 0;
     let selectedDurationHours = 24;
@@ -672,24 +1216,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
   // Preserve an existing photo or video when adding a note.
-    heartNoteInput?.addEventListener('input', (e) => {
-        const text = e.target.value.trim();
-        const attachment = MediaController.pendingAttachment;
+heartNoteInput?.addEventListener('input', (e) => {
+    const text = e.target.value.trim();
+    const attachment = MediaController.pendingAttachment;
 
-        if (
-            attachment &&
-            (attachment.type === 'photo' ||
-             attachment.type === 'video')
-        ) {
-            if (text) {
-                attachment.note = text;
-            } else {
-                delete attachment.note;
-            }
+    if (
+        attachment &&
+        (attachment.type === 'photo' ||
+         attachment.type === 'video')
+    ) {
+        if (text) {
+            attachment.note = text;
         } else {
-            MediaController.setNoteAttachment(text);
+            delete attachment.note;
         }
-    });
+    } else {
+        MediaController.setNoteAttachment(text);
+    }
+});
 
     // Handle 3s Video Recording Trigger
     startRecorderBtn?.addEventListener('click', async () => {
