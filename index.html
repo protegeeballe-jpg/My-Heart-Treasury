@@ -114,22 +114,77 @@
         </p>
     </section>
 
-    <!-- Bottom Action Bar: Calendar, Attach & Save -->
-    <div class="w-full max-w-md mx-auto grid grid-cols-3 gap-2 pt-2">
-        <button id="openCalendarBtn" class="py-3 px-2 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-xs flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
+    <!-- Bottom Action Bar: Calendar, Bible, Attach & Save Vault (Updated to 4 columns) -->
+    <div class="w-full max-w-md mx-auto grid grid-cols-4 gap-1.5 pt-2">
+        <button id="openCalendarBtn" class="py-3 px-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-[11px] flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
             <i data-lucide="calendar" class="w-4 h-4 text-rose-400"></i>
             <span>Calendar</span>
         </button>
 
-        <button id="openAttachmentModalBtn" class="py-3 px-2 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-xs flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
-            <i data-lucide="paperclip" class="w-4 h-4 text-rose-400"></i>
-            <span id="attachmentIndicator" class="truncate max-w-[90px]">Attach</span>
+        <button id="openBibleModalBtn" class="py-3 px-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-[11px] flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
+            <i data-lucide="book-open" class="w-4 h-4 text-rose-400"></i>
+            <span>Bible</span>
         </button>
 
-        <button id="saveTreasuryBtn" class="py-3 px-2 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-semibold text-xs flex flex-col items-center justify-center gap-1 shadow-lg shadow-rose-500/20">
+        <button id="openAttachmentModalBtn" class="py-3 px-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-[11px] flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
+            <i data-lucide="paperclip" class="w-4 h-4 text-rose-400"></i>
+            <span id="attachmentIndicator" class="truncate max-w-[70px]">Attach</span>
+        </button>
+
+        <button id="saveTreasuryBtn" class="py-3 px-1.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-semibold text-[11px] flex flex-col items-center justify-center gap-1 shadow-lg shadow-rose-500/20">
             <i data-lucide="bookmark-plus" class="w-4 h-4"></i>
             <span>Save Vault</span>
         </button>
+    </div>
+
+    <!-- Bible Study Modal Interface -->
+    <div id="bibleStudyModal" class="modal-backdrop hidden">
+        <div class="modal-card max-w-2xl h-[85vh] flex flex-col">
+            <!-- Header -->
+            <div class="modal-header border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="book-open" class="text-rose-400 w-5 h-5"></i>
+                    <h3 class="font-bold text-slate-100">Heart Treasury Bible Study</h3>
+                </div>
+                <button id="closeBibleModalBtn" class="modal-close-btn">&times;</button>
+            </div>
+
+            <!-- Controls Toolbar: Version Selector -->
+            <div class="py-3 flex items-center justify-between gap-2 border-b border-slate-800/60">
+                <select id="bibleVersionSelect" class="w-full bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-rose-500">
+                    <!-- Populated dynamically -->
+                </select>
+            </div>
+
+            <!-- Verse of the Day Banner -->
+            <div class="bg-rose-950/30 border border-rose-800/40 p-3 rounded-xl my-2 flex items-start justify-between gap-3">
+                <div>
+                    <span class="text-[10px] font-bold text-rose-400 uppercase tracking-wider">Verse of the Day</span>
+                    <p id="vodText" class="text-xs text-slate-200 italic mt-0.5">Loading Verse of the Day...</p>
+                </div>
+                <button id="attachVodBtn" class="px-2.5 py-1 bg-rose-500 hover:bg-rose-600 text-white text-[11px] font-semibold rounded-lg shrink-0 shadow">
+                    Attach ♥
+                </button>
+            </div>
+
+            <!-- Scripture Reading Pane -->
+            <div id="bibleReaderContent" class="flex-1 overflow-y-auto space-y-3 pr-2 my-2 text-slate-200 text-sm">
+                <!-- Dynamic Scripture verses -->
+            </div>
+
+            <!-- Action Footer -->
+            <div class="border-t border-slate-800 pt-3 flex justify-between items-center text-xs">
+                <span id="bibleReadingReference" class="text-slate-400 font-medium">Genesis 1</span>
+                <div class="flex gap-2">
+                    <button id="downloadVerseImgBtn" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-rose-300 rounded-xl font-semibold flex items-center gap-1.5 border border-slate-700">
+                        <i data-lucide="image" class="w-3.5 h-3.5"></i> Download Image
+                    </button>
+                    <button id="attachSelectedVersesBtn" class="px-3.5 py-2 bg-rose-500 hover:bg-rose-600 text-white rounded-xl font-semibold flex items-center gap-1.5 shadow">
+                        <i data-lucide="heart" class="w-3.5 h-3.5"></i> Attach to Deposit
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- PIN Lock / Startup Modal -->
@@ -246,10 +301,11 @@
         </div>
     </div>
 
-    <!-- Core Scripts -->
+    <!-- Core Scripts (Including bible.js added safely) -->
     <script src="js/storage.js"></script>
     <script src="js/audio.js"></script>
     <script src="js/media.js"></script>
+    <script src="js/bible.js"></script>
     <script src="js/app.js"></script>
 
     <!-- Force Lucide Icon Rendering -->
