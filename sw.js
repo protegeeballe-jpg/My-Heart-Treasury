@@ -1,4 +1,4 @@
-const CACHE_NAME = 'heart-treasury-v7';
+const CACHE_NAME = 'heart-treasury-v8';
 
 // Install and pre-cache core local assets with graceful error trapping
 self.addEventListener('install', (event) => {
@@ -15,6 +15,7 @@ self.addEventListener('install', (event) => {
                 './js/storage.js',
                 './js/audio.js',
                 './js/media.js',
+                './js/bible.js',
                 './js/app.js'
             ]).catch(err => {
                 console.warn('Cache addAll warning during install:', err);
