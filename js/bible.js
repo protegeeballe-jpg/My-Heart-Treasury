@@ -1,6 +1,15 @@
 /**
  * Bible Study Controller for My Heart Treasury
- * Optimized with Lazy-Loading to preserve zero-impact performance on core app state.
+ *
+ * Data contract:
+ * - Supports the app's flat verse-array JSON: [{ book, chapter, verse, text }].
+ * - Also supports the verified KJV wrapper format: { metadata, verses: [...] },
+ *   where each verse record has book_name, numeric book, chapter, verse, text.
+ * - Unknown structures are rejected. Scripture text is never fabricated or
+ *   silently borrowed from another translation.
+ *
+ * Lazy loading + a two-translation cache limit help avoid retaining all 46
+ * *parsed* Bible files in memory after a user browses multiple translations.
  */
 const BibleController = {
     versions: [
@@ -59,112 +68,223 @@ const BibleController = {
         { id: 'swedish', name: 'Swedish Bible', lang: 'Swedish', file: 'swedish.json' }
     ],
 
-    cache: {},
+    cache: Object.create(null),
+    cacheOrder: [],
+    cacheLimit: 2,
     currentVersion: 'english_web',
 
+    /**
+     * Convert only the two explicitly supported source structures into the
+     * flat record format required by app.js. Does not rewrite verse wording.
+     */
+    normalizeVersionData(data) {
+        let records;
+
+        if (Array.isArray(data)) {
+            records = data;
+        } else if (data && typeof data === 'object' && Array.isArray(data.verses)) {
+            // Verified KJV file shape: { metadata: {...}, verses: [...] }
+            records = data.verses;
+        } else {
+            throw new TypeError('Unsupported Bible JSON structure. Expected a verse array or an object containing a verses array.');
+        }
+
+        const normalized = records.map((record) => {
+            if (!record || typeof record !== 'object' || Array.isArray(record)) return record;
+
+            if (typeof record.book === 'string' && record.book.trim()) {
+                return record;
+            }
+
+            // Verified KJV shape uses a numeric `book` index and readable `book_name`.
+            if (typeof record.book_name === 'string' && record.book_name.trim()) {
+                return { ...record, book: record.book_name };
+            }
+
+            return record;
+        });
+
+        const hasRecognizedRecord = normalized.some((record) =>
+            record &&
+            typeof record === 'object' &&
+            typeof record.book === 'string' &&
+            record.book.trim().length > 0 &&
+            Number.isSafeInteger(Number(record.chapter)) &&
+            Number(record.chapter) > 0 &&
+            Number.isSafeInteger(Number(record.verse)) &&
+            Number(record.verse) > 0 &&
+            typeof record.text === 'string'
+        );
+
+        if (!hasRecognizedRecord) {
+            throw new TypeError('Bible JSON does not contain recognizable verse records. Expected book, chapter, verse, and text fields.');
+        }
+
+        return normalized;
+    },
+
+    _touchCache(versionId) {
+        this.cacheOrder = this.cacheOrder.filter((id) => id !== versionId);
+        this.cacheOrder.push(versionId);
+    },
+
+    _storeCache(versionId, data) {
+        this.cache[versionId] = data;
+        this._touchCache(versionId);
+
+        while (this.cacheOrder.length > this.cacheLimit) {
+            const evictedId = this.cacheOrder.shift();
+            if (evictedId) delete this.cache[evictedId];
+        }
+    },
+
     async getVersionData(versionId) {
-        if (this.cache[versionId]) {
+        const versionObj = this.versions.find((version) => version.id === versionId);
+        if (!versionObj) {
+            console.error(`[BibleController] Unknown translation ID: ${String(versionId)}. No fallback translation will be loaded.`);
+            return null;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(this.cache, versionId)) {
+            this._touchCache(versionId);
             return this.cache[versionId];
         }
 
-        // Cleaned up: safely queries the versions array directly without the broken nested reference
-        const versionObj = this.versions.find(v => v.id === versionId) || this.versions[0];
         try {
             const response = await fetch(`bible/${versionObj.file}`);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            const data = await response.json();
-            this.cache[versionId] = data;
-            return data;
-        } catch (err) {
-            console.error(`Failed to load version ${versionId}:`, err);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status} while loading bible/${versionObj.file}`);
+            }
+
+            const sourceData = await response.json();
+            const normalizedData = this.normalizeVersionData(sourceData);
+            this._storeCache(versionId, normalizedData);
+            return normalizedData;
+        } catch (error) {
+            console.error(`[BibleController] Failed to load or validate ${versionId}:`, error);
             return null;
         }
     },
 
-    // --- BULLETPROOF FLAT-ARRAY HELPERS (Defensive Programming Enabled) ---
     async getChapter(versionId, book, chapter) {
+        if (typeof book !== 'string' || !book.trim()) return [];
+        const chapterNumber = Number(chapter);
+        if (!Number.isSafeInteger(chapterNumber) || chapterNumber < 1) return [];
+
         const data = await this.getVersionData(versionId);
-        if (!data || !Array.isArray(data)) return [];
-        return data.filter(item => 
-            item && 
-            typeof item.book === 'string' && 
-            item.book.toUpperCase() === book.toUpperCase() && 
-            Number(item.chapter) === Number(chapter)
+        if (!Array.isArray(data)) return [];
+
+        const requestedBook = book.trim().toLocaleUpperCase();
+        return data.filter((item) =>
+            item &&
+            typeof item.book === 'string' &&
+            item.book.trim().toLocaleUpperCase() === requestedBook &&
+            Number(item.chapter) === chapterNumber
         );
     },
 
     async getBooks(versionId) {
         const data = await this.getVersionData(versionId);
-        if (!data || !Array.isArray(data)) return [];
-        return [...new Set(data.map(item => item && item.book).filter(Boolean))];
+        if (!Array.isArray(data)) return [];
+
+        const seen = new Set();
+        const books = [];
+        data.forEach((item) => {
+            if (!item || typeof item.book !== 'string' || !item.book.trim()) return;
+            const name = item.book.trim();
+            const key = name.toLocaleUpperCase();
+            if (!seen.has(key)) {
+                seen.add(key);
+                books.push(name);
+            }
+        });
+        return books;
     },
 
     async getChapters(versionId, book) {
+        if (typeof book !== 'string' || !book.trim()) return [];
         const data = await this.getVersionData(versionId);
-        if (!data || !Array.isArray(data)) return [];
-        return [...new Set(data
-            .filter(item => item && typeof item.book === 'string' && item.book.toUpperCase() === book.toUpperCase())
-            .map(item => item.chapter))]
-            .sort((a, b) => a - b);
-    },
-    // ---------------------------------------------------------------------
+        if (!Array.isArray(data)) return [];
 
+        const requestedBook = book.trim().toLocaleUpperCase();
+        const chapters = new Set();
+        data.forEach((item) => {
+            if (!item || typeof item.book !== 'string' || item.book.trim().toLocaleUpperCase() !== requestedBook) return;
+            const chapter = Number(item.chapter);
+            if (Number.isSafeInteger(chapter) && chapter > 0) chapters.add(chapter);
+        });
+        return Array.from(chapters).sort((a, b) => a - b);
+    },
+
+    /**
+     * This is retained for compatibility with the existing app.js.
+     * It is a fixed display quote, not dynamically retrieved from the selected
+     * translation. The reference is narrowed to Proverbs 3:5 because the text
+     * supplied here contains only verse 5, not verses 5-6.
+     */
     getVerseOfTheDay() {
         return {
-            reference: "Proverbs 3:5-6",
-            text: "Trust in the LORD with all your heart, and do not lean on your own understanding."
+            reference: 'Proverbs 3:5',
+            text: 'Trust in the LORD with all your heart, and do not lean on your own understanding.'
         };
     },
 
     generateVerseImage(verseText, reference, versionLabel) {
+        if (typeof verseText !== 'string' || !verseText.trim()) {
+            throw new TypeError('Cannot generate a verse image without verified verse text.');
+        }
+        if (typeof reference !== 'string' || !reference.trim()) {
+            throw new TypeError('Cannot generate a verse image without a verse reference.');
+        }
+
         const canvas = document.createElement('canvas');
         canvas.width = 1080;
         canvas.height = 1080;
-        const ctx = canvas.getContext('2d');
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('Canvas 2D context is unavailable.');
 
-        const gradient = ctx.createLinearGradient(0, 0, 1080, 1080);
+        const gradient = context.createLinearGradient(0, 0, 1080, 1080);
         gradient.addColorStop(0, '#0f172a');
         gradient.addColorStop(1, '#1e293b');
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 1080, 1080);
+        context.fillStyle = gradient;
+        context.fillRect(0, 0, 1080, 1080);
 
-        ctx.strokeStyle = '#f43f5e';
-        ctx.lineWidth = 8;
-        ctx.strokeRect(60, 60, 960, 960);
+        context.strokeStyle = '#f43f5e';
+        context.lineWidth = 8;
+        context.strokeRect(60, 60, 960, 960);
 
-        ctx.fillStyle = '#f43f5e';
-        ctx.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
-        ctx.fillText("MY HEART TREASURY • BIBLE STUDY", 100, 140);
+        context.fillStyle = '#f43f5e';
+        context.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
+        context.fillText('MY HEART TREASURY • BIBLE STUDY', 100, 140);
 
-        ctx.fillStyle = '#f8fafc';
-        ctx.font = '42px "Plus Jakarta Sans", sans-serif';
-        this._wrapText(ctx, `"${verseText}"`, 100, 280, 880, 60);
+        context.fillStyle = '#f8fafc';
+        context.font = '42px "Plus Jakarta Sans", sans-serif';
+        this._wrapText(context, `"${verseText}"`, 100, 280, 880, 60);
 
-        ctx.fillStyle = '#cbd5e1';
-        ctx.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
-        ctx.fillText(`${reference} (${versionLabel})`, 100, 920);
+        context.fillStyle = '#cbd5e1';
+        context.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
+        context.fillText(`${reference} (${String(versionLabel || 'Bible')})`, 100, 920);
 
         const link = document.createElement('a');
-        link.download = `bible_verse_${reference.replace(/\s+/g, '_')}.png`;
+        const safeReference = reference.replace(/[^a-z0-9_-]+/gi, '_');
+        link.download = `bible_verse_${safeReference}.png`;
         link.href = canvas.toDataURL('image/png');
         link.click();
     },
 
     _wrapText(context, text, x, y, maxWidth, lineHeight) {
-        const words = text.split(' ');
+        const words = String(text).split(/\s+/);
         let line = '';
-        for (let n = 0; n < words.length; n++) {
-            const testLine = line + words[n] + ' ';
-            const metrics = context.measureText(testLine);
-            const testWidth = metrics.width;
-            if (testWidth > maxWidth && n > 0) {
+        for (let index = 0; index < words.length; index += 1) {
+            const candidate = line ? `${line} ${words[index]}` : words[index];
+            if (context.measureText(candidate).width > maxWidth && line) {
                 context.fillText(line, x, y);
-                line = words[n] + ' ';
+                line = words[index];
                 y += lineHeight;
             } else {
-                line = testLine;
+                line = candidate;
             }
         }
-        context.fillText(line, x, y);
+        if (line) context.fillText(line, x, y);
     }
 };
