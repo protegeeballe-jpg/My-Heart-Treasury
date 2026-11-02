@@ -41,7 +41,6 @@ const LocationController = {
 
 document.addEventListener('DOMContentLoaded', async () => {
     await TreasuryStorage.init();
-    lucide.createIcons();
 
     // Register Service Worker for Offline PWA Support
     if ('serviceWorker' in navigator) {
