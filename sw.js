@@ -59,26 +59,28 @@ self.addEventListener('fetch', (event) => {
     const requestUrl = new URL(request.url);
     if (requestUrl.origin !== self.location.origin) return;
 
+    // Register background refresh synchronously as required by ExtendableEvent.
+    const networkUpdate = (async () => {
+        const cache = await caches.open(CACHE_NAME);
+        try {
+            const response = await fetch(request);
+            if (response && response.ok && response.type === 'basic') {
+                await cache.put(request, response.clone());
+            }
+            return response;
+        } catch (error) {
+            return null;
+        }
+    })();
+
+    event.waitUntil(networkUpdate.then(() => undefined));
+
     event.respondWith((async () => {
         const cache = await caches.open(CACHE_NAME);
         const cachedResponse = await cache.match(request);
 
-        const networkUpdate = fetch(request)
-            .then((response) => {
-                if (response && response.ok && response.type === 'basic') {
-                    cache.put(request, response.clone()).catch((cacheError) => {
-                        console.warn('[Heart Treasury] Cache refresh failed:', cacheError);
-                    });
-                }
-                return response;
-            })
-            .catch(() => null);
-
-        if (cachedResponse) {
-            // Keep the refresh alive without delaying the cached app response.
-            event.waitUntil(networkUpdate.then(() => undefined));
-            return cachedResponse;
-        }
+        // Cached app files return immediately; network refresh runs independently.
+        if (cachedResponse) return cachedResponse;
 
         const networkResponse = await networkUpdate;
         if (networkResponse) return networkResponse;
