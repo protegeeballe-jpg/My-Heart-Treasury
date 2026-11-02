@@ -1,70 +1,96 @@
-const CACHE_NAME = 'heart-treasury-v8';
+// My Heart Treasury PWA cache.
+// Increment the version when publishing a new app-shell release.
+const CACHE_NAME = 'heart-treasury-v9';
+const CACHE_PREFIX = 'heart-treasury-';
 
-// Install and pre-cache core local assets with graceful error trapping
+const APP_SHELL = [
+    './',
+    './index.html',
+    './manifest.json',
+    './css/styles.css',
+    './js/tailwind.js',
+    './js/lucide.js',
+    './js/storage.js',
+    './js/audio.js',
+    './js/media.js',
+    './js/bible.js',
+    './js/app.js'
+];
+
+// Pre-cache the app shell so installed launches have a local copy available.
 self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            // Using explicit paths that work reliably on GitHub Pages subpaths
-            return cache.addAll([
-                './',
-                './index.html',
-                './manifest.json',
-                './css/styles.css',
-                './js/tailwind.js',
-                './js/lucide.js',
-                './js/storage.js',
-                './js/audio.js',
-                './js/media.js',
-                './js/bible.js',
-                './js/app.js'
-            ]).catch(err => {
-                console.warn('Cache addAll warning during install:', err);
-            });
-        })
-    );
-    self.skipWaiting();
+    event.waitUntil((async () => {
+        const cache = await caches.open(CACHE_NAME);
+
+        try {
+            await cache.addAll(APP_SHELL);
+        } catch (error) {
+            // Keep installation resilient on unreliable connections.
+            console.warn('[Heart Treasury] App-shell pre-cache was incomplete:', error);
+        }
+
+        await self.skipWaiting();
+    })());
 });
 
-// Activate and clean up old caches immediately
+// Remove only older Heart Treasury caches; leave caches owned by other apps alone.
 self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then((keys) => {
-            return Promise.all(
-                keys.map((key) => {
-                    if (key !== CACHE_NAME) {
-                        console.log('Deleting outdated cache:', key);
-                        return caches.delete(key);
-                    }
-                })
-            );
-        })
-    );
-    self.clients.claim();
+    event.waitUntil((async () => {
+        const cacheNames = await caches.keys();
+
+        await Promise.all(
+            cacheNames
+                .filter((name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
+                .map((name) => caches.delete(name))
+        );
+
+        await self.clients.claim();
+    })());
 });
 
-// Robust Fetch Strategy: Network First, falling back cleanly to Cache
+// Stale-while-revalidate for same-origin files:
+// return a cached response immediately, then refresh it in the background.
+// Cross-origin requests (Google sign-in, Fonts, APIs) remain browser-managed.
 self.addEventListener('fetch', (event) => {
-    if (event.request.method !== 'GET') return;
+    const request = event.request;
 
-    const url = new URL(event.request.url);
+    if (request.method !== 'GET') return;
 
-    // Bypass Service Worker cache for Google APIs and external auth
-    if (url.hostname.includes('googleapis.com') || url.hostname.includes('google.com')) {
-        return;
-    }
+    const requestUrl = new URL(request.url);
+    if (requestUrl.origin !== self.location.origin) return;
 
-    event.respondWith(
-        fetch(event.request)
-            .then((networkResponse) => {
-                return caches.open(CACHE_NAME).then((cache) => {
-                    cache.put(event.request, networkResponse.clone());
-                    return networkResponse;
-                });
+    event.respondWith((async () => {
+        const cache = await caches.open(CACHE_NAME);
+        const cachedResponse = await cache.match(request);
+
+        const networkUpdate = fetch(request)
+            .then((response) => {
+                if (response && response.ok && response.type === 'basic') {
+                    cache.put(request, response.clone()).catch((cacheError) => {
+                        console.warn('[Heart Treasury] Cache refresh failed:', cacheError);
+                    });
+                }
+                return response;
             })
-            .catch(() => {
-                return caches.match(event.request).then((cachedResponse) => {
-                    return cachedResponse || caches.match('./index.html');
-                });
-            })
-    );
+            .catch(() => null);
+
+        if (cachedResponse) {
+            // Keep the refresh alive without delaying the cached app response.
+            event.waitUntil(networkUpdate.then(() => undefined));
+            return cachedResponse;
+        }
+
+        const networkResponse = await networkUpdate;
+        if (networkResponse) return networkResponse;
+
+        // If an offline navigation URL is not an exact cache key, serve the app shell.
+        if (request.mode === 'navigate') {
+            return (await cache.match('./index.html')) || (await cache.match('./'));
+        }
+
+        return new Response('This resource is not available offline.', {
+            status: 504,
+            statusText: 'Offline'
+        });
+    })());
 });
