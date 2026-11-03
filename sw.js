@@ -1,25 +1,23 @@
-const CACHE_NAME = 'heart-treasury-v8';
+const CACHE_NAME = 'heart-treasury-v9';
+const ASSETS_TO_CACHE = [
+    './',
+    './index.html',
+    './manifest.json',
+    './css/styles.css',
+    './js/tailwind.js',
+    './js/lucide.js',
+    './js/storage.js',
+    './js/audio.js',
+    './js/media.js',
+    './js/bible.js',
+    './js/app.js'
+];
 
-// Install and pre-cache core local assets with graceful error trapping
+// Install and pre-cache core local assets
 self.addEventListener('install', (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            // Using explicit paths that work reliably on GitHub Pages subpaths
-            return cache.addAll([
-                './',
-                './index.html',
-                './manifest.json',
-                './css/styles.css',
-                './js/tailwind.js',
-                './js/lucide.js',
-                './js/storage.js',
-                './js/audio.js',
-                './js/media.js',
-                './js/bible.js',
-                './js/app.js'
-            ]).catch(err => {
-                console.warn('Cache addAll warning during install:', err);
-            });
+            return cache.addAll(ASSETS_TO_CACHE);
         })
     );
     self.skipWaiting();
@@ -42,7 +40,7 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
-// Robust Fetch Strategy: Network First, falling back cleanly to Cache
+// High-Performance Cache-First Strategy with Background Revalidation
 self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') return;
 
@@ -54,17 +52,38 @@ self.addEventListener('fetch', (event) => {
     }
 
     event.respondWith(
-        fetch(event.request)
-            .then((networkResponse) => {
-                return caches.open(CACHE_NAME).then((cache) => {
-                    cache.put(event.request, networkResponse.clone());
+        caches.match(event.request).then((cachedResponse) => {
+            // If we have a cached response, serve it immediately
+            if (cachedResponse) {
+                // Fetch the latest version in the background to update cache for next time
+                fetch(event.request).then((networkResponse) => {
+                    if (networkResponse && networkResponse.status === 200) {
+                        caches.open(CACHE_NAME).then((cache) => {
+                            cache.put(event.request, networkResponse);
+                        });
+                    }
+                }).catch(() => {
+                    // Ignore background network errors when offline
+                });
+
+                return cachedResponse;
+            }
+
+            // If not in cache, fetch from network, cache it, and return
+            return fetch(event.request)
+                .then((networkResponse) => {
+                    const responseToCache = networkResponse.clone();
+                    caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(event.request, responseToCache);
+                    });
                     return networkResponse;
+                })
+                .catch(() => {
+                    // Fallback for navigation requests if offline
+                    if (event.request.mode === 'navigate') {
+                        return caches.match('./index.html');
+                    }
                 });
-            })
-            .catch(() => {
-                return caches.match(event.request).then((cachedResponse) => {
-                    return cachedResponse || caches.match('./index.html');
-                });
-            })
+        })
     );
 });
