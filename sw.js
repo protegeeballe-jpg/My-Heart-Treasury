@@ -59,7 +59,7 @@ self.addEventListener('fetch', (event) => {
     // Dynamic runtime caching for Bible files, with explicit HTTP error handling.
     if (url.pathname.includes('/bible/')) {
         event.respondWith(
-            caches.match(event.request).then((cachedResponse) => {
+            caches.open(CACHE_NAME).then((appCache) => appCache.match(event.request)).then((cachedResponse) => {
                 if (cachedResponse) {
                     fetch(event.request).then((networkResponse) => {
                         if (networkResponse && networkResponse.ok) {
@@ -96,7 +96,7 @@ self.addEventListener('fetch', (event) => {
 
     // Cache-first for local app assets, with background refresh for cached files.
     event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
+        caches.open(CACHE_NAME).then((appCache) => appCache.match(event.request)).then((cachedResponse) => {
             if (cachedResponse) {
                 fetch(event.request).then((networkResponse) => {
                     if (networkResponse && networkResponse.ok) {
@@ -119,7 +119,9 @@ self.addEventListener('fetch', (event) => {
             }).catch(() => {
                 if (event.request.mode === 'navigate') {
                     const fallbackUrl = new URL('index.html', APP_SCOPE_URL).href;
-                    return caches.match(fallbackUrl).then((fallback) =>
+                    return caches.open(CACHE_NAME)
+                        .then((appCache) => appCache.match(fallbackUrl))
+                        .then((fallback) =>
                         fallback || new Response('My Heart Treasury is unavailable offline.', {
                             status: 503,
                             headers: { 'Content-Type': 'text/plain; charset=utf-8' }
