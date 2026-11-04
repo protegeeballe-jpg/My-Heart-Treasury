@@ -98,6 +98,28 @@ const TreasuryStorage = {
         });
     },
 
+    async _withVaultWriteLock(task) {
+        if (typeof task !== 'function') {
+            throw new TypeError('A vault write task is required.');
+        }
+
+        // Web Locks coordinates writes across same-origin tabs and installed PWAs.
+        if (typeof navigator !== 'undefined' &&
+            navigator.locks &&
+            typeof navigator.locks.request === 'function') {
+            return navigator.locks.request(
+                'my-heart-treasury-vault-write',
+                { mode: 'exclusive' },
+                task
+            );
+        }
+
+        // Fallback for browsers without Web Locks: serialize writes in this page.
+        const queuedWrite = this.saveQueue.then(task, task);
+        this.saveQueue = queuedWrite.catch(() => undefined);
+        return queuedWrite;
+    },
+
     _isValidDateKey(dateKey) {
         if (typeof dateKey !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return false;
         const parsed = new Date(dateKey + 'T00:00:00.000Z');
@@ -360,17 +382,7 @@ const TreasuryStorage = {
             }
         };
 
-        // Web Locks serializes writes across tabs on browsers that support it.
-        if (typeof navigator !== 'undefined' &&
-            navigator.locks &&
-            typeof navigator.locks.request === 'function') {
-            return navigator.locks.request('my-heart-treasury-vault-save', { mode: 'exclusive' }, persistEntry);
-        }
-
-        // Fallback: serialize all saves in this page when Web Locks is unavailable.
-        const queuedSave = this.saveQueue.then(persistEntry, persistEntry);
-        this.saveQueue = queuedSave.catch(() => undefined);
-        return queuedSave;
+        return this._withVaultWriteLock(persistEntry);
     },
     async getPin() {
         try {
@@ -382,41 +394,42 @@ const TreasuryStorage = {
     },
 
     async setPin(pin, oldPin = null) {
-        try {
-            await this.init();
-
-            if (typeof pin !== 'string' || !/^\d{4,6}$/.test(pin)) {
-                throw new TypeError('PIN must contain 4 to 6 digits.');
-            }
-
-            const existingPinToken = await this.getPin();
-            if (existingPinToken) {
-                if (!oldPin) {
-                    throw new Error('Current PIN is required to change or update your PIN.');
+        return this._withVaultWriteLock(async () => {    
+            try {
+                await this.init();
+    
+                if (typeof pin !== 'string' || !/^\d{4,6}$/.test(pin)) {
+                    throw new TypeError('PIN must contain 4 to 6 digits.');
                 }
-                if (!(await this.verifyPin(oldPin))) {
-                    throw new Error('Incorrect current PIN provided.');
+    
+                const existingPinToken = await this.getPin();
+                if (existingPinToken) {
+                    if (!oldPin) {
+                        throw new Error('Current PIN is required to change or update your PIN.');
+                    }
+                    if (!(await this.verifyPin(oldPin))) {
+                        throw new Error('Incorrect current PIN provided.');
+                    }
                 }
+    
+                // Prepare encryption before writing anything. The PIN marker and
+                // database are committed together so they cannot become mismatched.
+                const database = await this.getDatabase(existingPinToken ? oldPin : null);
+                const validationCanary = await this._encrypt(pin, { status: 'VALID_PIN' });
+                const values = { my_heart_treasury_pin_v1: validationCanary };
+    
+                if (database && Object.keys(database).length > 0) {
+                    values.treasury_db = await this._encrypt(pin, database);
+                }
+    
+                await this.setMany(values);
+                return true;
+            } catch (error) {
+                console.error('Failed to save PIN:', error);
+                throw error;
             }
-
-            // Prepare encryption before writing anything. The PIN marker and
-            // database are committed together so they cannot become mismatched.
-            const database = await this.getDatabase(existingPinToken ? oldPin : null);
-            const validationCanary = await this._encrypt(pin, { status: 'VALID_PIN' });
-            const values = { my_heart_treasury_pin_v1: validationCanary };
-
-            if (database && Object.keys(database).length > 0) {
-                values.treasury_db = await this._encrypt(pin, database);
-            }
-
-            await this.setMany(values);
-            return true;
-        } catch (error) {
-            console.error('Failed to save PIN:', error);
-            throw error;
-        }
+        });
     },
-
     async verifyPin(pin) {
         try {
             await this.init();
@@ -430,40 +443,42 @@ const TreasuryStorage = {
     },
 
     async removePin(currentPin) {
-        try {
-            await this.init();
-            if (!(await this.verifyPin(currentPin))) {
-                throw new Error('Incorrect PIN. Cannot remove security protection.');
+        return this._withVaultWriteLock(async () => {    
+            try {
+                await this.init();
+                if (!(await this.verifyPin(currentPin))) {
+                    throw new Error('Incorrect PIN. Cannot remove security protection.');
+                }
+    
+                const database = await this.getDatabase(currentPin);
+                // Keep the plain database and remove the PIN marker atomically.
+                await this.setMany({ treasury_db: database }, ['my_heart_treasury_pin_v1']);
+                return true;
+            } catch (error) {
+                console.error('Failed to remove PIN:', error);
+                throw error;
             }
-
-            const database = await this.getDatabase(currentPin);
-            // Keep the plain database and remove the PIN marker atomically.
-            await this.setMany({ treasury_db: database }, ['my_heart_treasury_pin_v1']);
-            return true;
-        } catch (error) {
-            console.error('Failed to remove PIN:', error);
-            throw error;
-        }
+        });
     },
-
     async restoreDatabase(importedData, sessionPin) {
-        await this.init();
-
-        const validatedData = this._validateDatabase(importedData);
-        const pinCheck = await this.getPin();
-
-        if (pinCheck) {
-            if (!sessionPin || !(await this.verifyPin(sessionPin))) {
-                throw new Error('A valid Treasury PIN is required to restore the encrypted vault.');
+        return this._withVaultWriteLock(async () => {    
+            await this.init();
+    
+            const validatedData = this._validateDatabase(importedData);
+            const pinCheck = await this.getPin();
+    
+            if (pinCheck) {
+                if (!sessionPin || !(await this.verifyPin(sessionPin))) {
+                    throw new Error('A valid Treasury PIN is required to restore the encrypted vault.');
+                }
+                await this.set('treasury_db', await this._encrypt(sessionPin, validatedData));
+            } else {
+                await this.set('treasury_db', validatedData);
             }
-            await this.set('treasury_db', await this._encrypt(sessionPin, validatedData));
-        } else {
-            await this.set('treasury_db', validatedData);
-        }
-
-        return true;
+    
+            return true;
+        });
     },
-
     async exportData(sessionPin) {
         try {
             const db = await this.getDatabase(sessionPin);
