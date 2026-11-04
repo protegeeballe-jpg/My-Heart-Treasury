@@ -1,4 +1,4 @@
-const CACHE_NAME = 'heart-treasury-v12';
+const CACHE_NAME = 'heart-treasury-v13';
 
 // Core static assets required for instant app startup
 const ASSETS_TO_CACHE = [
