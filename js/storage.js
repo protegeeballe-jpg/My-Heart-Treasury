@@ -379,14 +379,23 @@ const TreasuryStorage = {
                     timestamp: attachment.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                     hearts: payload.hearts,
                     note,
-                    media
+                    media,
+                    // Keep each deposit's own location with its memory entry so
+                    // multiple saves on one date do not share/overwrite location.
+                    location: attachment.location || null
                 });
-    
+
                 if (payload.attachment) {
                     // Media bytes are stored once in the timeline entry. The root
-                    // attachment keeps only lightweight metadata (e.g. location).
+                    // attachment keeps lightweight metadata and the latest known
+                    // location for older calendar/timeline integrations.
                     const attachmentMetadata = { ...payload.attachment };
                     delete attachmentMetadata.dataUrl;
+
+                    if (!attachmentMetadata.location && entry.attachment?.location) {
+                        attachmentMetadata.location = entry.attachment.location;
+                    }
+
                     entry.attachment = attachmentMetadata;
                 }
                 db[dateKey] = entry;
