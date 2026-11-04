@@ -16,9 +16,13 @@ const AudioController = (() => {
         return audioCtx;
     }
 
+    function setEnabled(enabled) {
+        isMuted = !Boolean(enabled);
+        return !isMuted;
+    }
+
     function toggleMute() {
-        isMuted = !isMuted;
-        return isMuted;
+        return setEnabled(isMuted);
     }
 
     // Synthesizes an authentic biological human "Lub-Dub" heartbeat sound
@@ -72,6 +76,7 @@ const AudioController = (() => {
 
     return {
         playHeartPop,
+        setEnabled,
         toggleMute
     };
 })();
