@@ -844,11 +844,15 @@ button, label {
 body.treasury-body {
     height: 100vh;
     height: 100dvh;
+    min-height: 100dvh;
     max-height: 100vh;
     max-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
     padding-top: max(2rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
     padding-right: max(1rem, env(safe-area-inset-right, 0px));
-    padding-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+    padding-bottom: max(3.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem));
     padding-left: max(1rem, env(safe-area-inset-left, 0px));
 }
 
@@ -875,8 +879,14 @@ body.treasury-body {
 }
 
 .home-action-bar {
+    flex-shrink: 0;
     margin-bottom: 0;
     padding-bottom: 0.25rem;
+}
+
+.home-action-bar > button {
+    min-height: 3rem;
+    touch-action: manipulation;
 }
 
 /* Keep the centerpiece proportionate on short phones and in landscape. */
@@ -892,5 +902,23 @@ body.treasury-body {
 
     .home-heart-section > p {
         margin-top: 0.875rem;
+    }
+}
+
+
+/* Short screens remain scrollable so the bottom dock is never clipped. */
+@media (max-height: 560px) {
+    body.treasury-body {
+        justify-content: flex-start;
+        gap: 0.5rem;
+    }
+
+    .home-heart-section {
+        flex: 0 0 auto;
+        min-height: 11rem;
+    }
+
+    .home-action-bar {
+        margin-top: 0.5rem;
     }
 }
