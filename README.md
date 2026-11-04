@@ -7,10 +7,10 @@
 ## ✨ Features
 
 * **Interactive Heart Vault:** Tap the red heart counter to accumulate love points with dynamic floating particles and Web Audio feedback.
-* **Flexible Savings Sessions:** Set custom tracking targets for **24 Hours**, **36 Hours**, or **72 Hours**.
-* **Memory Attachments:** Attach sweet written notes, photo uploads, or capture live **3-second video clips** via webcam.
+* **Daily Treasury:** Choose a calendar date and collect hearts without a countdown or timed session controls.
+* **Memory Attachments:** Attach written notes, optimized photos, or capture short **3-second video clips** when the device supports camera recording.
 * **Calendar Treasury:** View a visual monthly grid tracking daily totals and inspect past timeline memories.
-* **Mobile Ready (PWA):** Fully responsive layout designed for iOS, Android, and Desktop browsers with offline support.
+* **Mobile Ready (PWA):** Responsive layout with device safe-area spacing, short-screen scrolling, and offline support for compatible browsers.
 
 ---
 ## 🚀 Quick Start / Local Setup
