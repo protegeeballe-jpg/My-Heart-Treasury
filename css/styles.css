@@ -850,6 +850,12 @@ body.treasury-body {
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior-y: contain;
+    /* Baseline spacing for browsers without max() or safe-area env() support. */
+    padding-top: 2rem;
+    padding-right: 1rem;
+    padding-bottom: 3.5rem;
+    padding-left: 1rem;
+    /* Modern devices receive their reported safe-area insets as well. */
     padding-top: max(2rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
     padding-right: max(1rem, env(safe-area-inset-right, 0px));
     padding-bottom: max(3.5rem, calc(env(safe-area-inset-bottom, 0px) + 1.5rem));
