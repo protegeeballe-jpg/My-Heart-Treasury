@@ -1468,6 +1468,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await checkPinLock();
 
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
+        try {
         const currentPinToken = await TreasuryStorage.getPin();
         
         if (currentPinToken) {
@@ -1564,6 +1565,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                     icon: "⚠️"
                 });
             }
+        }
+        } catch (error) {
+            console.error('PIN management failed:', error);
+            await showAppModal({
+                title: "PIN Update Failed",
+                message: "Your existing PIN protection was left unchanged. Please verify your PIN and available device storage, then try again.\n\n" + (error?.message || 'Unknown PIN error.'),
+                icon: "⚠️"
+            });
         }
     });
 
