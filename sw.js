@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'heart-treasury-';
-const CACHE_NAME = 'heart-treasury-v20';
+const CACHE_NAME = 'heart-treasury-v21';
 const APP_SCOPE_URL = new URL(self.registration.scope);
 
 // Core static assets required for instant app startup
