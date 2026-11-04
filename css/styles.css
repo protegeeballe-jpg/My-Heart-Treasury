@@ -835,3 +835,62 @@ button, label {
         min-height: 42px;
     }
 }
+
+/* ==========================================
+   HOME SCREEN — MOBILE LAYOUT & SAFE AREAS
+   ========================================== */
+
+/* Use the visible mobile viewport and keep controls clear of device UI. */
+body.treasury-body {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    padding-top: max(2rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+    padding-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+}
+
+.home-session-card,
+.home-vod-card,
+.home-action-bar {
+    flex-shrink: 0;
+}
+
+.home-session-card,
+.home-vod-card {
+    margin-top: 0.5rem;
+}
+
+.home-date-control {
+    text-align: center;
+}
+
+.home-heart-section {
+    flex: 1 1 0%;
+    min-height: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+.home-action-bar {
+    margin-bottom: 0;
+    padding-bottom: 0.25rem;
+}
+
+/* Keep the centerpiece proportionate on short phones and in landscape. */
+@media (max-height: 700px) {
+    .home-heart-section .heart-svg {
+        width: clamp(6.5rem, 20vh, 9rem);
+        height: clamp(6.5rem, 20vh, 9rem);
+    }
+
+    .home-heart-section .heart-trigger-btn {
+        padding: 0.5rem;
+    }
+
+    .home-heart-section > p {
+        margin-top: 0.875rem;
+    }
+}
