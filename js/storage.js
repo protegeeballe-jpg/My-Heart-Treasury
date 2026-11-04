@@ -461,7 +461,7 @@ const TreasuryStorage = {
             document.body.appendChild(downloadAnchor);
             downloadAnchor.click();
             downloadAnchor.remove();
-            setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+            setTimeout(() => URL.revokeObjectURL(downloadUrl), 30000);
         } catch (err) {
             alert("Export failed: " + err.message);
         }
