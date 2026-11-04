@@ -1741,6 +1741,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         MediaController.readImageFile(file, (attachment) => {
             if (attachment && attachment.dataUrl) {
+                const noteText = heartNoteInput?.value?.trim() || '';
+                if (noteText) attachment.note = noteText;
+
                 const previewImage = document.createElement('img');
                 previewImage.src = attachment.dataUrl;
                 previewImage.alt = 'Selected memory photo';
@@ -1790,6 +1793,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             cameraViewportContainer?.classList.add('hidden');
 
             if (attachment && attachment.dataUrl) {
+                const noteText = heartNoteInput?.value?.trim() || '';
+                if (noteText) attachment.note = noteText;
+                MediaController.pendingAttachment = attachment;
+
                 const videoPreview = document.createElement('video');
                 videoPreview.src = attachment.dataUrl;
                 videoPreview.controls = true;
