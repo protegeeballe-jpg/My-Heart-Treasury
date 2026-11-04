@@ -301,7 +301,7 @@ const TreasuryStorage = {
     async createBackupPackage(sessionPin) {
         return this._withVaultWriteLock(async () => {
             const database = await this.getDatabase(sessionPin);
-            const pinToken = await this.getPin();
+            const pinToken = await this.getPinStrict();
 
             if (pinToken) {
                 if (!sessionPin || !(await this.verifyPin(sessionPin))) {
@@ -392,7 +392,7 @@ const TreasuryStorage = {
                 db[dateKey] = entry;
                 this._validateDatabase(db);
     
-                const pinCheck = await this.getPin();
+                const pinCheck = await this.getPinStrict();
                 if (pinCheck) {
                     if (!sessionPin || !(await this.verifyPin(sessionPin))) {
                         throw new Error('A valid Treasury PIN is required to save the encrypted vault.');
@@ -411,11 +411,18 @@ const TreasuryStorage = {
 
         return this._withVaultWriteLock(persistEntry);
     },
+    async getPinStrict() {
+        await this.init();
+        return await this.get('my_heart_treasury_pin_v1') || null;
+    },
+
+    // UI checks may fail closed to "locked/unavailable"; write/export paths
+    // must use getPinStrict so a read error can never downgrade encryption.
     async getPin() {
         try {
-            await this.init();
-            return await this.get('my_heart_treasury_pin_v1') || null;
-        } catch (err) {
+            return await this.getPinStrict();
+        } catch (error) {
+            console.warn('Could not read Treasury PIN state:', error);
             return null;
         }
     },
@@ -429,7 +436,7 @@ const TreasuryStorage = {
                     throw new TypeError('PIN must contain 4 to 6 digits.');
                 }
     
-                const existingPinToken = await this.getPin();
+                const existingPinToken = await this.getPinStrict();
                 if (existingPinToken) {
                     if (!oldPin) {
                         throw new Error('Current PIN is required to change or update your PIN.');
@@ -511,7 +518,7 @@ const TreasuryStorage = {
             }
 
             const validatedData = this._validateDatabase(databaseToRestore);
-            const pinCheck = await this.getPin();
+            const pinCheck = await this.getPinStrict();
 
             if (pinCheck) {
                 if (!sessionPin || !(await this.verifyPin(sessionPin))) {
