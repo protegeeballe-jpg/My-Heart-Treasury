@@ -1341,9 +1341,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     async function performDriveBackup() {
+        const syncButton = document.getElementById('gdriveSyncBtn');
+        if (syncButton?.disabled) return;
+
+        if (syncButton) {
+            syncButton.disabled = true;
+            syncButton.setAttribute('aria-busy', 'true');
+            syncButton.title = 'Syncing to Google Drive...';
+        }
+
         try {
-            const syncStatusText = document.getElementById('attachmentIndicator');
-            if (syncStatusText) syncStatusText.textContent = "Syncing to Cloud...";
+            if (!accessToken) {
+                throw new Error('Google Drive authorization is unavailable. Please reconnect and try again.');
+            }
 
             const dbDump = await TreasuryStorage.getDatabase(sessionPin);
             const fileContent = JSON.stringify(dbDump, null, 2);
@@ -1352,6 +1362,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='treasury-backup.json'&fields=files(id,name)",
                 { headers: { Authorization: `Bearer ${accessToken}` } }
             );
+
             if (!searchRes.ok) {
                 throw new Error('Google Drive search failed with status ' + searchRes.status);
             }
@@ -1363,7 +1374,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             const existingFile = searchData.files[0] || null;
             // Parent assignment is only supplied when creating a new file.
-            // Drive does not accept an empty parents array as an update instruction.
             const metadata = existingFile
                 ? { name: 'treasury-backup.json', mimeType: 'application/json' }
                 : { name: 'treasury-backup.json', mimeType: 'application/json', parents: ['appDataFolder'] };
@@ -1372,39 +1382,39 @@ document.addEventListener('DOMContentLoaded', async () => {
             form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
             form.append('file', new Blob([fileContent], { type: 'application/json' }));
 
-            let uploadUrl = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
-            let method = 'POST';
-
-            if (existingFile) {
-                uploadUrl = `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=multipart`;
-                method = 'PATCH';
-            }
+            const uploadUrl = existingFile
+                ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingFile.id)}?uploadType=multipart`
+                : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+            const method = existingFile ? 'PATCH' : 'POST';
 
             const uploadRes = await fetch(uploadUrl, {
-                method: method,
+                method,
                 headers: { Authorization: `Bearer ${accessToken}` },
                 body: form
             });
 
-            if (uploadRes.ok) {
-                if (syncStatusText) syncStatusText.textContent = "Attach";
-                await showAppModal({
-                    title: "Sync Successful",
-                    message: "✨ Your treasury backup has been securely saved to your Google Drive App Folder!",
-                    icon: "☁️"
-                });
-            } else {
-                throw new Error(`Upload failed with status ${uploadRes.status}`);
+            if (!uploadRes.ok) {
+                throw new Error('Google Drive upload failed with status ' + uploadRes.status);
             }
-        } catch (err) {
-            console.error('Google Drive Sync Error:', err);
-            const syncStatusText = document.getElementById('attachmentIndicator');
-            if (syncStatusText) syncStatusText.textContent = "Attach";
+
+            await showAppModal({
+                title: "Sync Successful",
+                message: "✨ Your Treasury backup has been securely saved to your Google Drive App Folder!",
+                icon: "☁️"
+            });
+        } catch (error) {
+            console.error('Google Drive Sync Error:', error);
             await showAppModal({
                 title: "Sync Failed",
-                message: "⚠️ Could not complete Google Drive sync. Please check your internet connection.",
+                message: "⚠️ Could not complete Google Drive sync. Please check your connection and Google Drive permissions.\n\n" + (error?.message || 'Unknown sync error.'),
                 icon: "⚠️"
             });
+        } finally {
+            if (syncButton) {
+                syncButton.disabled = false;
+                syncButton.removeAttribute('aria-busy');
+                syncButton.title = 'Sync to Google Drive';
+            }
         }
     }
 
@@ -1610,6 +1620,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // storage/location work is in progress must remain in the user's draft.
         const heartsToSave = currentHeartCount;
         const attachmentAtStart = MediaController.pendingAttachment;
+        const attachmentSignature = attachmentAtStart ? JSON.stringify(attachmentAtStart) : null;
         const attachmentSnapshot = attachmentAtStart ? { ...attachmentAtStart } : {};
 
         isSavingTreasury = true;
@@ -1641,7 +1652,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             // Clear only the attachment that was included in this deposit.
             // A different attachment added during saving must be preserved.
-            if (MediaController.pendingAttachment === attachmentAtStart) {
+            if (MediaController.pendingAttachment === attachmentAtStart &&
+                (attachmentAtStart === null || JSON.stringify(MediaController.pendingAttachment) === attachmentSignature)) {
                 MediaController.pendingAttachment = null;
                 if (heartNoteInput) heartNoteInput.value = '';
                 if (photoInput) photoInput.value = '';
