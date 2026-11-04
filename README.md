@@ -10,6 +10,7 @@
 * **Daily Treasury:** Choose a calendar date and collect hearts without a countdown or timed session controls.
 * **Memory Attachments:** Attach written notes, optimized photos, or capture short **3-second video clips** when the device supports camera recording.
 * **Calendar Treasury:** View a visual monthly grid tracking daily totals and inspect past timeline memories.
+* **Backup Protection:** Local exports and Google Drive backups are encrypted when Treasury PIN protection is enabled; older JSON backups remain supported.
 * **Mobile Ready (PWA):** Responsive layout with device safe-area spacing, short-screen scrolling, and offline support for compatible browsers.
 
 ---
