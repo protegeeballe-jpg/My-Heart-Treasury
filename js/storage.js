@@ -298,6 +298,33 @@ const TreasuryStorage = {
         return await this.getDatabase(sessionPin);
     },
 
+    async createBackupPackage(sessionPin) {
+        return this._withVaultWriteLock(async () => {
+            const database = await this.getDatabase(sessionPin);
+            const pinToken = await this.getPin();
+
+            if (pinToken) {
+                if (!sessionPin || !(await this.verifyPin(sessionPin))) {
+                    throw new Error('A valid Treasury PIN is required to encrypt this backup.');
+                }
+
+                return {
+                    backupFormat: 'my-heart-treasury',
+                    backupVersion: 1,
+                    encrypted: true,
+                    payload: await this._encrypt(sessionPin, database)
+                };
+            }
+
+            return {
+                backupFormat: 'my-heart-treasury',
+                backupVersion: 1,
+                encrypted: false,
+                data: database
+            };
+        });
+    },
+
     async saveDayEntry(dateKey, payload, sessionPin) {
         const persistEntry = async () => {
             try {
@@ -460,29 +487,48 @@ const TreasuryStorage = {
             }
         });
     },
-    async restoreDatabase(importedData, sessionPin) {
-        return this._withVaultWriteLock(async () => {    
+    async restoreDatabase(importedData, sessionPin, backupPin = sessionPin) {
+        return this._withVaultWriteLock(async () => {
             await this.init();
-    
-            const validatedData = this._validateDatabase(importedData);
+
+            let databaseToRestore = importedData;
+
+            if (importedData && importedData.backupFormat === 'my-heart-treasury') {
+                if (importedData.backupVersion !== 1) {
+                    throw new TypeError('This Treasury backup version is not supported.');
+                }
+
+                if (importedData.encrypted === true) {
+                    if (typeof backupPin !== 'string' || !/^\d{4,6}$/.test(backupPin)) {
+                        throw new Error('Enter the 4 to 6-digit PIN used when this backup was created.');
+                    }
+                    databaseToRestore = await this._decrypt(backupPin, importedData.payload);
+                } else if (importedData.encrypted === false) {
+                    databaseToRestore = importedData.data;
+                } else {
+                    throw new TypeError('The Treasury backup encryption setting is invalid.');
+                }
+            }
+
+            const validatedData = this._validateDatabase(databaseToRestore);
             const pinCheck = await this.getPin();
-    
+
             if (pinCheck) {
                 if (!sessionPin || !(await this.verifyPin(sessionPin))) {
-                    throw new Error('A valid Treasury PIN is required to restore the encrypted vault.');
+                    throw new Error('A valid current Treasury PIN is required to restore the vault.');
                 }
                 await this.set('treasury_db', await this._encrypt(sessionPin, validatedData));
             } else {
                 await this.set('treasury_db', validatedData);
             }
-    
+
             return true;
         });
     },
     async exportData(sessionPin) {
         try {
-            const db = await this.getDatabase(sessionPin);
-            const backupBlob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+            const backupPackage = await this.createBackupPackage(sessionPin);
+            const backupBlob = new Blob([JSON.stringify(backupPackage, null, 2)], { type: 'application/json' });
             const downloadUrl = URL.createObjectURL(backupBlob);
             const downloadAnchor = document.createElement('a');
             downloadAnchor.href = downloadUrl;
@@ -496,7 +542,7 @@ const TreasuryStorage = {
         }
     },
 
-    async importData(file, sessionPin, callback) {
+    async importData(file, sessionPin, callback, requestBackupPin = null) {
         let callbackFinished = false;
         const finish = (success, error = null) => {
             if (callbackFinished) return;
@@ -530,7 +576,21 @@ const TreasuryStorage = {
             }
 
             const importedData = JSON.parse(fileText);
-            await this.restoreDatabase(importedData, sessionPin);
+            let backupPin = sessionPin;
+
+            if (importedData &&
+                importedData.backupFormat === 'my-heart-treasury' &&
+                importedData.encrypted === true) {
+                if (typeof requestBackupPin === 'function') {
+                    backupPin = await requestBackupPin();
+                }
+
+                if (typeof backupPin !== 'string' || !/^\d{4,6}$/.test(backupPin)) {
+                    throw new Error('Backup import was cancelled or the backup PIN is invalid.');
+                }
+            }
+
+            await this.restoreDatabase(importedData, sessionPin, backupPin);
             finish(true);
         } catch (error) {
             finish(false, error);
