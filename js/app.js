@@ -1356,8 +1356,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 throw new Error('Google Drive authorization is unavailable. Please reconnect and try again.');
             }
 
-            const dbDump = await TreasuryStorage.getDatabase(sessionPin);
-            const fileContent = JSON.stringify(dbDump, null, 2);
+            const backupPackage = await TreasuryStorage.createBackupPackage(sessionPin);
+            const fileContent = JSON.stringify(backupPackage, null, 2);
 
             const searchRes = await fetch(
                 "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='treasury-backup.json'&fields=files(id,name)",
@@ -1401,7 +1401,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             await showAppModal({
                 title: "Sync Successful",
-                message: "✨ Your Treasury backup has been securely saved to your Google Drive App Folder!",
+                message: "✨ Your Treasury backup has been saved to your Google Drive App Folder. Backups are encrypted when PIN protection is enabled.",
                 icon: "☁️"
             });
         } catch (error) {
@@ -2043,23 +2043,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         const file = e.target.files[0];
         if (!file) return;
 
-        TreasuryStorage.importData(file, sessionPin, async (success) => {
+        await TreasuryStorage.importData(file, sessionPin, async (success) => {
             if (success) {
                 await showAppModal({
                     title: "Import Successful",
-                    message: "✨ Your treasury backup has been successfully restored!",
+                    message: "✨ Your Treasury backup has been successfully restored!",
                     icon: "📂"
                 });
                 location.reload();
             } else {
                 await showAppModal({
                     title: "Import Failed",
-                    message: "⚠️ The backup file is invalid or corrupted.",
+                    message: "⚠️ The backup could not be restored. Check the file and, for encrypted backups, enter the original backup PIN.",
                     icon: "⚠️"
                 });
             }
+        }, async () => {
+            return await showAppModal({
+                title: "Backup PIN Required",
+                message: "This backup is encrypted. Enter the 4 to 6-digit PIN that was active when this backup was created. Use the older PIN if you changed it afterward.",
+                icon: "🔒",
+                isPrompt: true,
+                inputPlaceholder: "4-6 digit backup PIN"
+            });
         });
-    });
+    });;
 
     let soundEnabled = true;
     document.getElementById('soundToggleBtn')?.addEventListener('click', () => {
