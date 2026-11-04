@@ -54,8 +54,10 @@ const TreasuryStorage = {
             const transaction = db.transaction(this.storeName, 'readwrite');
             const store = transaction.objectStore(this.storeName);
             const request = store.put(val, key);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
+
+            transaction.oncomplete = () => resolve(request.result);
+            transaction.onerror = () => reject(transaction.error || request.error || new Error('Storage write failed.'));
+            transaction.onabort = () => reject(transaction.error || new Error('Storage write was interrupted.'));
         });
     },
 
@@ -65,9 +67,95 @@ const TreasuryStorage = {
             const transaction = db.transaction(this.storeName, 'readwrite');
             const store = transaction.objectStore(this.storeName);
             const request = store.delete(key);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
+
+            transaction.oncomplete = () => resolve(request.result);
+            transaction.onerror = () => reject(transaction.error || request.error || new Error('Storage deletion failed.'));
+            transaction.onabort = () => reject(transaction.error || new Error('Storage deletion was interrupted.'));
         });
+    },
+
+    async setMany(values = {}, deleteKeys = []) {
+        const db = await this.openDB();
+
+        return new Promise((resolve, reject) => {
+            let transaction;
+
+            try {
+                transaction = db.transaction(this.storeName, 'readwrite');
+                const store = transaction.objectStore(this.storeName);
+                Object.entries(values).forEach(([key, value]) => store.put(value, key));
+                deleteKeys.forEach((key) => store.delete(key));
+            } catch (error) {
+                if (transaction) transaction.abort();
+                reject(error);
+                return;
+            }
+
+            transaction.oncomplete = () => resolve(true);
+            transaction.onerror = () => reject(transaction.error || new Error('Atomic storage update failed.'));
+            transaction.onabort = () => reject(transaction.error || new Error('Atomic storage update was interrupted.'));
+        });
+    },
+
+    _isValidDateKey(dateKey) {
+        if (typeof dateKey !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return false;
+        const parsed = new Date(dateKey + 'T00:00:00.000Z');
+        return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === dateKey;
+    },
+
+    _validateDatabase(database) {
+        if (!database || typeof database !== 'object' || Array.isArray(database)) {
+            throw new TypeError('Backup data must be a date-keyed Treasury object.');
+        }
+
+        for (const [dateKey, record] of Object.entries(database)) {
+            if (!this._isValidDateKey(dateKey)) {
+                throw new TypeError('Invalid Treasury date key: ' + dateKey);
+            }
+
+            if (!record || typeof record !== 'object' || Array.isArray(record)) {
+                throw new TypeError('Treasury entry for ' + dateKey + ' is invalid.');
+            }
+
+            const totalHearts = record.totalHearts ?? record.hearts;
+            if (totalHearts !== undefined &&
+                (!Number.isSafeInteger(Number(totalHearts)) || Number(totalHearts) < 0)) {
+                throw new TypeError('Heart total for ' + dateKey + ' must be a non-negative whole number.');
+            }
+
+            if (record.entries !== undefined && !Array.isArray(record.entries)) {
+                throw new TypeError('Memory entries for ' + dateKey + ' must be an array.');
+            }
+
+            if (Array.isArray(record.entries)) {
+                record.entries.forEach((entry, index) => {
+                    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                        throw new TypeError('Memory entry ' + (index + 1) + ' for ' + dateKey + ' is invalid.');
+                    }
+
+                    if (entry.hearts !== undefined &&
+                        (!Number.isSafeInteger(Number(entry.hearts)) || Number(entry.hearts) < 0)) {
+                        throw new TypeError('Heart count in memory entry ' + (index + 1) + ' for ' + dateKey + ' is invalid.');
+                    }
+
+                    if (entry.note !== undefined && entry.note !== null && typeof entry.note !== 'string') {
+                        throw new TypeError('Memory note ' + (index + 1) + ' for ' + dateKey + ' must be text.');
+                    }
+
+                    if (entry.media !== undefined && entry.media !== null &&
+                        (typeof entry.media !== 'object' || Array.isArray(entry.media))) {
+                        throw new TypeError('Memory media ' + (index + 1) + ' for ' + dateKey + ' is invalid.');
+                    }
+                });
+            }
+
+            if (record.attachment !== undefined && record.attachment !== null &&
+                (typeof record.attachment !== 'object' || Array.isArray(record.attachment))) {
+                throw new TypeError('Attachment metadata for ' + dateKey + ' is invalid.');
+            }
+        }
+
+        return database;
     },
 
     // --- Crypto Helper Functions (AES-GCM & PBKDF2) ---
@@ -154,14 +242,15 @@ const TreasuryStorage = {
             if (!rawData) return {};
 
             if (!rawData.encrypted) {
-                return rawData;
+                return this._validateDatabase(rawData);
             }
 
             if (!overridePin) {
                 throw new Error("Vault is locked. Valid PIN required to read database.");
             }
 
-            return await this._decrypt(overridePin, rawData);
+            const decrypted = await this._decrypt(overridePin, rawData);
+            return this._validateDatabase(decrypted);
         } catch (err) {
             console.error('Failed to get or decrypt database:', err);
             throw err;
@@ -172,56 +261,80 @@ const TreasuryStorage = {
         return await this.getDatabase(sessionPin);
     },
 
-   async saveDayEntry(dateKey, payload, sessionPin) {
+    async saveDayEntry(dateKey, payload, sessionPin) {
         try {
-            await this.init();
-            let db = await this.getDatabase(sessionPin);
-            if (!db[dateKey]) {
-                db[dateKey] = { totalHearts: 0, entries: [] };
+            if (!this._isValidDateKey(dateKey)) {
+                throw new TypeError('Choose a valid calendar date before saving.');
             }
-            db[dateKey].totalHearts += payload.hearts;
+
+            if (!payload || !Number.isSafeInteger(payload.hearts) || payload.hearts < 1) {
+                throw new TypeError('At least one whole heart is required to save a Treasury entry.');
+            }
+
+            await this.init();
+            const db = await this.getDatabase(sessionPin);
+            const existingEntry = db[dateKey] || {};
+            if (typeof existingEntry !== 'object' || Array.isArray(existingEntry)) {
+                throw new TypeError('Existing Treasury entry for ' + dateKey + ' is invalid.');
+            }
+
+            const currentTotal = Number(existingEntry.totalHearts ?? existingEntry.hearts ?? 0);
+            if (!Number.isSafeInteger(currentTotal) || currentTotal < 0 ||
+                !Number.isSafeInteger(currentTotal + payload.hearts)) {
+                throw new TypeError('Heart total for ' + dateKey + ' is invalid or too large.');
+            }
+
+            if (existingEntry.entries !== undefined && !Array.isArray(existingEntry.entries)) {
+                throw new TypeError('Memory entries for ' + dateKey + ' are invalid.');
+            }
+
+            const entry = existingEntry;
+            entry.totalHearts = currentTotal + payload.hearts;
+            if (!Array.isArray(entry.entries)) entry.entries = [];
 
             const attachment = payload.attachment || {};
-
-            // Safely map photo or video media directly from the attachment payload
             let media = null;
+
             if (attachment.type === 'photo' || attachment.type === 'video') {
-                media = {
-                    type: attachment.type,
-                    dataUrl: attachment.dataUrl
-                };
+                if (typeof attachment.dataUrl !== 'string' || !attachment.dataUrl.startsWith('data:')) {
+                    throw new TypeError('The attached media data is invalid. Please attach the file again.');
+                }
+                media = { type: attachment.type, dataUrl: attachment.dataUrl };
             }
 
-            // Safely extract notes (supporting standalone notes or notes attached to media)
-            let note = null;
-            if (attachment.type === 'note') {
-                note = attachment.text || null;
-            } else {
-                note = attachment.note || null;
+            const note = attachment.type === 'note'
+                ? (attachment.text || null)
+                : (attachment.note || null);
+
+            if (note !== null && typeof note !== 'string') {
+                throw new TypeError('The attached memory note must be text.');
             }
 
-            db[dateKey].entries.push({
+            entry.entries.push({
                 timestamp: attachment.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 hearts: payload.hearts,
-                note: note,
-                media: media
+                note,
+                media
             });
 
-            // Preserve root attachment/location metadata for calendar and map integration
-            if (payload.attachment) {
-                db[dateKey].attachment = payload.attachment;
-            }
+            if (payload.attachment) entry.attachment = payload.attachment;
+            db[dateKey] = entry;
+            this._validateDatabase(db);
 
             const pinCheck = await this.getPin();
             if (pinCheck) {
-                if (!sessionPin) throw new Error("PIN required to encrypt vault.");
-                const encryptedPayload = await this._encrypt(sessionPin, db);
-                await this.set('treasury_db', encryptedPayload);
+                if (!sessionPin || !(await this.verifyPin(sessionPin))) {
+                    throw new Error('A valid Treasury PIN is required to save the encrypted vault.');
+                }
+                await this.set('treasury_db', await this._encrypt(sessionPin, db));
             } else {
                 await this.set('treasury_db', db);
             }
-        } catch (err) {
-            alert(`Error saving to device storage: ${err.message}`);
+
+            return true;
+        } catch (error) {
+            console.error('Failed to save Treasury entry:', error);
+            throw error;
         }
     },
     
@@ -237,28 +350,36 @@ const TreasuryStorage = {
     async setPin(pin, oldPin = null) {
         try {
             await this.init();
+
+            if (typeof pin !== 'string' || !/^\d{4,6}$/.test(pin)) {
+                throw new TypeError('PIN must contain 4 to 6 digits.');
+            }
+
             const existingPinToken = await this.getPin();
             if (existingPinToken) {
                 if (!oldPin) {
-                    throw new Error("Current PIN is required to change or update your PIN.");
+                    throw new Error('Current PIN is required to change or update your PIN.');
                 }
-                const isValid = await this.verifyPin(oldPin);
-                if (!isValid) {
-                    throw new Error("Incorrect current PIN provided.");
+                if (!(await this.verifyPin(oldPin))) {
+                    throw new Error('Incorrect current PIN provided.');
                 }
             }
 
-            const validationCanary = await this._encrypt(pin, { status: "VALID_PIN" });
-            await this.set('my_heart_treasury_pin_v1', validationCanary);
+            // Prepare encryption before writing anything. The PIN marker and
+            // database are committed together so they cannot become mismatched.
+            const database = await this.getDatabase(existingPinToken ? oldPin : null);
+            const validationCanary = await this._encrypt(pin, { status: 'VALID_PIN' });
+            const values = { my_heart_treasury_pin_v1: validationCanary };
 
-            let db = await this.getDatabase(oldPin);
-            if (db && Object.keys(db).length > 0) {
-                const encryptedDb = await this._encrypt(pin, db);
-                await this.set('treasury_db', encryptedDb);
+            if (database && Object.keys(database).length > 0) {
+                values.treasury_db = await this._encrypt(pin, database);
             }
-        } catch (err) {
-            console.error('Failed to save PIN:', err);
-            throw err;
+
+            await this.setMany(values);
+            return true;
+        } catch (error) {
+            console.error('Failed to save PIN:', error);
+            throw error;
         }
     },
 
@@ -277,30 +398,36 @@ const TreasuryStorage = {
     async removePin(currentPin) {
         try {
             await this.init();
-            const isValid = await this.verifyPin(currentPin);
-            if (!isValid) {
-                throw new Error("Incorrect PIN. Cannot remove security protection.");
+            if (!(await this.verifyPin(currentPin))) {
+                throw new Error('Incorrect PIN. Cannot remove security protection.');
             }
 
-            let db = await this.getDatabase(currentPin);
-            await this.set('treasury_db', db);
-            await this.del('my_heart_treasury_pin_v1');
-        } catch (err) {
-            console.error('Failed to remove PIN:', err);
-            throw err;
+            const database = await this.getDatabase(currentPin);
+            // Keep the plain database and remove the PIN marker atomically.
+            await this.setMany({ treasury_db: database }, ['my_heart_treasury_pin_v1']);
+            return true;
+        } catch (error) {
+            console.error('Failed to remove PIN:', error);
+            throw error;
         }
     },
 
     async restoreDatabase(importedData, sessionPin) {
         await this.init();
+
+        const validatedData = this._validateDatabase(importedData);
         const pinCheck = await this.getPin();
+
         if (pinCheck) {
-            if (!sessionPin) throw new Error("PIN required to encrypt imported database.");
-            const encryptedPayload = await this._encrypt(sessionPin, importedData);
-            await this.set('treasury_db', encryptedPayload);
+            if (!sessionPin || !(await this.verifyPin(sessionPin))) {
+                throw new Error('A valid Treasury PIN is required to restore the encrypted vault.');
+            }
+            await this.set('treasury_db', await this._encrypt(sessionPin, validatedData));
         } else {
-            await this.set('treasury_db', importedData);
+            await this.set('treasury_db', validatedData);
         }
+
+        return true;
     },
 
     async exportData(sessionPin) {
@@ -319,17 +446,40 @@ const TreasuryStorage = {
     },
 
     async importData(file, sessionPin, callback) {
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            try {
-                const importedData = JSON.parse(event.target.result);
-                await this.restoreDatabase(importedData, sessionPin);
-                callback(true);
-            } catch (e) {
-                console.error("Import parse error:", e);
-                callback(false);
-            }
+        const finish = (success, error = null) => {
+            if (error) console.error('Import failed:', error);
+            if (typeof callback === 'function') callback(success);
         };
-        reader.readAsText(file);
+
+        if (!file || (typeof file.text !== 'function' && typeof FileReader === 'undefined')) {
+            finish(false, new TypeError('Select a valid JSON backup file.'));
+            return;
+        }
+
+        try {
+            let fileText;
+
+            if (typeof file.text === 'function') {
+                fileText = await file.text();
+            } else {
+                fileText = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(reader.error || new Error('Could not read the backup file.'));
+                    reader.onabort = () => reject(new Error('Backup file reading was cancelled.'));
+                    reader.readAsText(file);
+                });
+            }
+
+            if (typeof fileText !== 'string' || !fileText.trim()) {
+                throw new TypeError('The selected backup file is empty.');
+            }
+
+            const importedData = JSON.parse(fileText);
+            await this.restoreDatabase(importedData, sessionPin);
+            finish(true);
+        } catch (error) {
+            finish(false, error);
+        }
     }
 };
