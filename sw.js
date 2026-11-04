@@ -1,4 +1,6 @@
-const CACHE_NAME = 'heart-treasury-v14';
+const CACHE_PREFIX = 'heart-treasury-';
+const CACHE_NAME = 'heart-treasury-v15';
+const APP_SCOPE_URL = new URL(self.registration.scope);
 
 // Core static assets required for instant app startup
 const ASSETS_TO_CACHE = [
@@ -15,31 +17,26 @@ const ASSETS_TO_CACHE = [
     './js/app.js'
 ];
 
-// Install and pre-cache core static assets
+// Install and pre-cache core static assets before activating the new worker.
 self.addEventListener('install', (event) => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(ASSETS_TO_CACHE);
-        })
+        caches.open(CACHE_NAME)
+            .then((cache) => cache.addAll(ASSETS_TO_CACHE))
+            .then(() => self.skipWaiting())
     );
-    self.skipWaiting();
 });
 
-// Activate and clean up outdated caches immediately
+// Delete only caches owned by My Heart Treasury, never unrelated origin caches.
 self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then((keys) => {
-            return Promise.all(
-                keys.map((key) => {
-                    if (key !== CACHE_NAME) {
-                        console.log('Deleting outdated cache:', key);
-                        return caches.delete(key);
-                    }
-                })
-            );
-        })
-    );
-    self.clients.claim();
+    event.waitUntil((async () => {
+        const keys = await caches.keys();
+        const ownedOldCaches = keys.filter((key) =>
+            key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME
+        );
+
+        await Promise.all(ownedOldCaches.map((key) => caches.delete(key)));
+        await self.clients.claim();
+    })());
 });
 
 // Fetch Strategy: Fast Cache-First for UI + Automatic Dynamic Caching for Bible files
@@ -48,73 +45,93 @@ self.addEventListener('fetch', (event) => {
 
     const url = new URL(event.request.url);
 
-    // Bypass Google APIs and external auth
+    // Never intercept requests outside this app's own origin and URL scope.
+    if (url.origin !== APP_SCOPE_URL.origin ||
+        !url.pathname.startsWith(APP_SCOPE_URL.pathname)) {
+        return;
+    }
+
+    // Bypass Google APIs and external authentication endpoints.
     if (url.hostname.includes('googleapis.com') || url.hostname.includes('google.com')) {
         return;
     }
 
-    // Dynamic Runtime Caching for any file requested from the /bible/ folder
+    // Dynamic runtime caching for Bible files, with explicit HTTP error handling.
     if (url.pathname.includes('/bible/')) {
         event.respondWith(
             caches.match(event.request).then((cachedResponse) => {
                 if (cachedResponse) {
-                    // Serve from cache instantly, revalidate in background
                     fetch(event.request).then((networkResponse) => {
-                        if (networkResponse && networkResponse.status === 200) {
+                        if (networkResponse && networkResponse.ok) {
                             caches.open(CACHE_NAME).then((cache) => {
-                                cache.put(event.request, networkResponse);
+                                cache.put(event.request, networkResponse.clone());
                             });
                         }
                     }).catch(() => {});
+
                     return cachedResponse;
                 }
 
-                // If not yet cached, fetch from network and save to cache automatically
-                return fetch(event.request)
-                    .then((networkResponse) => {
-                        const responseToCache = networkResponse.clone();
-                        caches.open(CACHE_NAME).then((cache) => {
-                            cache.put(event.request, responseToCache);
-                        });
-                        return networkResponse;
-                    })
-                    .catch(() => {
-                        return new Response(JSON.stringify({ error: "Offline and version not cached yet." }), {
-                            headers: { 'Content-Type': 'application/json' }
-                        });
+                return fetch(event.request).then((networkResponse) => {
+                    if (!networkResponse || !networkResponse.ok) {
+                        throw new Error('Bible file request failed.');
+                    }
+
+                    caches.open(CACHE_NAME).then((cache) => {
+                        cache.put(event.request, networkResponse.clone());
                     });
+
+                    return networkResponse;
+                }).catch(() => new Response(
+                    JSON.stringify({ error: 'Bible file unavailable offline and not yet cached.' }),
+                    {
+                        status: 503,
+                        headers: { 'Content-Type': 'application/json' }
+                    }
+                ));
             })
         );
         return;
     }
 
-    // Standard High-Performance Cache-First strategy for core local assets
+    // Cache-first for local app assets, with background refresh for cached files.
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
             if (cachedResponse) {
                 fetch(event.request).then((networkResponse) => {
-                    if (networkResponse && networkResponse.status === 200) {
+                    if (networkResponse && networkResponse.ok) {
                         caches.open(CACHE_NAME).then((cache) => {
-                            cache.put(event.request, networkResponse);
+                            cache.put(event.request, networkResponse.clone());
                         });
                     }
                 }).catch(() => {});
+
                 return cachedResponse;
             }
 
-            return fetch(event.request)
-                .then((networkResponse) => {
-                    const responseToCache = networkResponse.clone();
+            return fetch(event.request).then((networkResponse) => {
+                if (networkResponse && networkResponse.ok) {
                     caches.open(CACHE_NAME).then((cache) => {
-                        cache.put(event.request, responseToCache);
+                        cache.put(event.request, networkResponse.clone());
                     });
-                    return networkResponse;
-                })
-                .catch(() => {
-                    if (event.request.mode === 'navigate') {
-                        return caches.match('./index.html');
-                    }
+                }
+                return networkResponse;
+            }).catch(() => {
+                if (event.request.mode === 'navigate') {
+                    const fallbackUrl = new URL('index.html', APP_SCOPE_URL).href;
+                    return caches.match(fallbackUrl).then((fallback) =>
+                        fallback || new Response('My Heart Treasury is unavailable offline.', {
+                            status: 503,
+                            headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+                        })
+                    );
+                }
+
+                return new Response('This resource is unavailable offline.', {
+                    status: 503,
+                    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
                 });
+            });
         })
     );
 });
