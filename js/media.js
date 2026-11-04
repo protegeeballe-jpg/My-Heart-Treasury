@@ -52,6 +52,9 @@ const MediaController = {
             this.mediaRecorder = null;
             this.recordedChunks = [];
 
+            // Make completed recordings available to Save Vault and its preview.
+            if (attachment) this.pendingAttachment = attachment;
+
             if (typeof onComplete === 'function') {
                 try {
                     onComplete(attachment || null);
