@@ -40,7 +40,14 @@ const LocationController = {
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
-    await TreasuryStorage.init();
+    try {
+        await TreasuryStorage.init();
+    } catch (storageError) {
+        console.error('Treasury storage initialization failed:', storageError);
+        alert('My Heart Treasury could not access secure device storage. Please check your browser storage settings and reload. No new Treasury entry was saved.');
+        return;
+    }
+
     lucide.createIcons();
 
     // Register Service Worker for Offline PWA Support
@@ -1425,7 +1432,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     async function checkPinLock() {
-        const savedPinToken = await TreasuryStorage.getPin();
+        const savedPinToken = await TreasuryStorage.getPinStrict();
         const pinModal = document.getElementById('pinLockModal');
         const pinInput = document.getElementById('pinInput');
         const submitPinBtn = document.getElementById('submitPinBtn');
@@ -1465,11 +1472,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
     }
-    await checkPinLock();
+    try {
+        await checkPinLock();
+    } catch (pinStatusError) {
+        console.error('Treasury PIN status could not be verified:', pinStatusError);
+        await showAppModal({
+            title: 'Vault Status Unavailable',
+            message: 'The app could not verify your PIN protection settings. To protect your existing Treasury data, the app has stopped loading. Please reload when browser storage is available again. Your saved vault was not changed.',
+            icon: '🔒'
+        });
+        return;
+    }
 
     document.getElementById('openPinSettingsBtn')?.addEventListener('click', async () => {
         try {
-        const currentPinToken = await TreasuryStorage.getPin();
+        const currentPinToken = await TreasuryStorage.getPinStrict();
         
         if (currentPinToken) {
             const enteredCurrent = await showAppModal({
