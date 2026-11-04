@@ -1350,6 +1350,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             syncButton.title = 'Syncing to Google Drive...';
         }
 
+        let uploadConfirmed = false;
         try {
             if (!accessToken) {
                 throw new Error('Google Drive authorization is unavailable. Please reconnect and try again.');
@@ -1396,6 +1397,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (!uploadRes.ok) {
                 throw new Error('Google Drive upload failed with status ' + uploadRes.status);
             }
+            uploadConfirmed = true;
 
             await showAppModal({
                 title: "Sync Successful",
@@ -1403,12 +1405,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 icon: "☁️"
             });
         } catch (error) {
-            console.error('Google Drive Sync Error:', error);
-            await showAppModal({
-                title: "Sync Failed",
-                message: "⚠️ Could not complete Google Drive sync. Please check your connection and Google Drive permissions.\n\n" + (error?.message || 'Unknown sync error.'),
-                icon: "⚠️"
-            });
+            if (uploadConfirmed) {
+                console.error('Google Drive upload completed, but its success notification failed:', error);
+            } else {
+                console.error('Google Drive Sync Error:', error);
+                await showAppModal({
+                    title: "Sync Failed",
+                    message: "⚠️ Could not complete Google Drive sync. Please check your connection and Google Drive permissions.\n\n" + (error?.message || 'Unknown sync error.'),
+                    icon: "⚠️"
+                });
+            }
         } finally {
             if (syncButton) {
                 syncButton.disabled = false;
@@ -1624,6 +1630,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const attachmentSnapshot = attachmentAtStart ? { ...attachmentAtStart } : {};
 
         isSavingTreasury = true;
+        let storageCommitConfirmed = false;
         if (saveTreasuryBtn) {
             saveTreasuryBtn.disabled = true;
             saveTreasuryBtn.setAttribute('aria-busy', 'true');
@@ -1644,6 +1651,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (saved !== true) {
                 throw new Error('The storage engine did not confirm that the Treasury entry was saved.');
             }
+            storageCommitConfirmed = true;
 
             currentHeartCount = Math.max(0, currentHeartCount - heartsToSave);
             if (heartCountBadge) {
@@ -1674,12 +1682,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 icon: "🌟"
             });
         } catch (error) {
-            console.error('Treasury save failed:', error);
-            await showAppModal({
-                title: "Treasury Not Saved",
-                message: "Your hearts and attachment are still here. Please check your device storage and try again.\n\n" + (error?.message || 'Unknown storage error.'),
-                icon: "⚠️"
-            });
+            if (storageCommitConfirmed) {
+                console.error('Treasury was saved, but the success notification failed:', error);
+            } else {
+                console.error('Treasury save failed:', error);
+                await showAppModal({
+                    title: "Treasury Not Saved",
+                    message: "Your hearts and attachment are still here. Please check your device storage and try again.\n\n" + (error?.message || 'Unknown storage error.'),
+                    icon: "⚠️"
+                });
+            }
         } finally {
             isSavingTreasury = false;
             if (saveTreasuryBtn) {
