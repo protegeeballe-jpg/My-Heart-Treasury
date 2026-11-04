@@ -1825,10 +1825,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     clearMediaBtn?.addEventListener('click', () => {
+        // Remove the photo/video but keep any note the user has written.
+        const noteText = heartNoteInput?.value?.trim() || '';
         MediaController.clear();
+        if (noteText) MediaController.setNoteAttachment(noteText);
+
         mediaPreviewBox?.classList.add('hidden');
-        if (previewContent) previewContent.innerHTML = '';
+        if (previewContent) previewContent.replaceChildren();
         if (photoInput) photoInput.value = '';
+
+        if (attachmentIndicator) {
+            attachmentIndicator.textContent = noteText ? 'Attached ✓' : 'Attach';
+            attachmentIndicator.classList.toggle('text-rose-400', Boolean(noteText));
+            attachmentIndicator.classList.toggle('font-bold', Boolean(noteText));
+        }
     });
 
     confirmAttachmentBtn?.addEventListener('click', () => {
