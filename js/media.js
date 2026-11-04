@@ -5,27 +5,81 @@ const MediaController = {
     pendingAttachment: null,
     mediaRecorder: null,
     recordedChunks: [],
+    isRecording: false,
+    recordingTimer: null,
 
     async startThreeSecondRecording(videoElement, progressBarElement, onComplete) {
+        if (this.isRecording) return false;
+
+        this.isRecording = true;
         this.recordedChunks = [];
+
         let stream = null;
+        let recorder = null;
+        let completed = false;
+
+        const clearRecordingTimer = () => {
+            if (this.recordingTimer !== null) {
+                clearInterval(this.recordingTimer);
+                this.recordingTimer = null;
+            }
+        };
+
+        const stopStream = () => {
+            if (stream) {
+                stream.getTracks().forEach(track => {
+                    try { track.stop(); } catch (error) {
+                        console.warn('Could not stop a media track:', error);
+                    }
+                });
+                stream = null;
+            }
+        };
+
+        const resetPreview = () => {
+            if (!videoElement) return;
+            try { videoElement.pause(); } catch (_) {}
+            videoElement.srcObject = null;
+        };
+
+        const finish = (attachment) => {
+            if (completed) return;
+            completed = true;
+            clearRecordingTimer();
+            stopStream();
+            resetPreview();
+            this.isRecording = false;
+            this.mediaRecorder = null;
+
+            if (typeof onComplete === 'function') {
+                try {
+                    onComplete(attachment || null);
+                } catch (callbackError) {
+                    console.error('Recording completion callback failed:', callbackError);
+                }
+            }
+        };
 
         try {
             if (typeof MediaRecorder === 'undefined') {
                 throw new Error('MediaRecorder is not supported in this browser.');
             }
 
-            // Shrink resolution slightly for a lighter, faster recording
+            if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+                throw new Error('Camera access is unavailable in this browser or context.');
+            }
+
+            // Prefer audio, but keep video recording available when microphone access is denied.
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { 
-                        width: { ideal: 640 }, 
+                    video: {
+                        width: { ideal: 640 },
                         height: { ideal: 480 },
                         frameRate: { ideal: 30 }
                     },
                     audio: true
                 });
-           } catch (audioError) {
+            } catch (audioError) {
                 console.warn('Audio capture unavailable; trying video-only.', audioError);
 
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -43,204 +97,223 @@ const MediaController = {
                 videoElement.srcObject = stream;
                 try {
                     await videoElement.play();
-                } catch (playErr) {
-                    console.warn('Video preview autoplay failed:', playErr);
+                } catch (playError) {
+                    console.warn('Video preview autoplay failed:', playError);
                 }
             }
 
-           // Prefer MP4 when supported, then try WebM formats.
-           const mimeTypes = [
-               'video/mp4',
-               'video/webm;codecs=vp8,opus',
-               'video/webm;codecs=vp9,opus',
-               'video/webm'
-           ];
+            const mimeTypes = [
+                'video/mp4',
+                'video/webm;codecs=vp8,opus',
+                'video/webm;codecs=vp9,opus',
+                'video/webm'
+            ];
 
             let options = {};
             if (typeof MediaRecorder.isTypeSupported === 'function') {
                 const supportedMimeType = mimeTypes.find(type => {
                     try {
                         return MediaRecorder.isTypeSupported(type);
-                    } catch {
+                    } catch (_) {
                         return false;
                     }
                 });
 
                 if (supportedMimeType) {
-                    // AUTO-COMPRESSOR: Limit bitrate to 800kbps (Keeps video looking great, 
-                    // but shrinks the file size down to a lightweight few hundred kilobytes!)
-                    options = { 
+                    options = {
                         mimeType: supportedMimeType,
-                        videoBitsPerSecond: 800000 
+                        videoBitsPerSecond: 800000
                     };
                 }
             }
 
-            // Safeguard instantiation in case options cause unsupported state
             try {
-                this.mediaRecorder = new MediaRecorder(stream, options);
-            } catch (err) {
-                console.warn('Configured options failed, falling back to default MediaRecorder:', err);
-                this.mediaRecorder = new MediaRecorder(stream);
+                recorder = new MediaRecorder(stream, options);
+            } catch (optionsError) {
+                console.warn('Configured recorder options were rejected; using browser defaults.', optionsError);
+                recorder = new MediaRecorder(stream);
             }
 
-            this.mediaRecorder.ondataavailable = (e) => {
-                if (e.data && e.data.size > 0) {
-                    this.recordedChunks.push(e.data);
+            this.mediaRecorder = recorder;
+
+            recorder.ondataavailable = (event) => {
+                if (event.data && event.data.size > 0) {
+                    this.recordedChunks.push(event.data);
                 }
             };
 
-            this.mediaRecorder.onerror = (event) => {
-                console.error('MediaRecorder internal error:', event.error);
+            recorder.onerror = (event) => {
+                console.error('MediaRecorder internal error:', event.error || event);
+                clearRecordingTimer();
+
+                if (recorder.state !== 'inactive') {
+                    try { recorder.stop(); } catch (_) {}
+                }
+
+                finish(null);
             };
 
-           this.mediaRecorder.onstop = () => {
-           stream.getTracks().forEach(track => track.stop());
-
-                if (videoElement) {
-                  videoElement.pause();
-                  videoElement.srcObject = null;
-                }
+            recorder.onstop = () => {
+                clearRecordingTimer();
+                stopStream();
+                resetPreview();
 
                 if (this.recordedChunks.length === 0) {
                     console.error('Recording failed: No recorded chunks captured.');
-                    if (onComplete) onComplete(null);
+                    finish(null);
                     return;
                 }
 
-                // Keep the container MIME type free of codec parameters.
-                // This avoids commas in the generated data URL header.
-               const recorderMimeType =
-                this.mediaRecorder?.mimeType ||
-                this.recordedChunks.find(chunk => chunk.type)?.type ||
-                 'video/webm';
+                const recorderMimeType =
+                    recorder.mimeType ||
+                    this.recordedChunks.find(chunk => chunk.type)?.type ||
+                    'video/webm';
 
-                  const containerMimeType =
-                recorderMimeType.split(';', 1)[0].trim().toLowerCase();
-
-                const blob = new Blob(this.recordedChunks, {
-                  type: containerMimeType
-              });
-
+                const containerMimeType = recorderMimeType.split(';', 1)[0].trim().toLowerCase();
+                const blob = new Blob(this.recordedChunks, { type: containerMimeType });
                 const reader = new FileReader();
 
-               reader.onload = () => {
-                    const attachment = { type: 'video', dataUrl: reader.result };
-                    this.pendingAttachment = attachment;
-                    if (onComplete) onComplete(attachment);
+                reader.onload = () => {
+                    finish({
+                        type: 'video',
+                        dataUrl: reader.result
+                    });
                 };
 
                 reader.onerror = () => {
-                    console.error("Video reading failed.");
-                    if (onComplete) onComplete(null);
+                    console.error('Video reading failed:', reader.error);
+                    finish(null);
                 };
 
+                reader.onabort = () => finish(null);
                 reader.readAsDataURL(blob);
             };
 
-            // Request periodic recording data approximately every 100 ms.
-            // Actual delivery timing depends on the browser.
-            this.mediaRecorder.start(100);
+            recorder.start(100);
 
-            // Use actual elapsed time for consistent recording duration.
             const recordingDurationMs = 3200;
             const startedAt = performance.now();
 
-            const interval = setInterval(() => {
+            this.recordingTimer = setInterval(() => {
                 const elapsed = performance.now() - startedAt;
-                const progress = Math.min(
-                    (elapsed / recordingDurationMs) * 100,
-                    100
-                );
+                const progress = Math.min((elapsed / recordingDurationMs) * 100, 100);
 
                 if (progressBarElement) {
-                    progressBarElement.style.width = `${progress}%`;
+                    progressBarElement.style.width = progress + '%';
                 }
 
                 if (elapsed >= recordingDurationMs) {
-                    clearInterval(interval);
+                    clearRecordingTimer();
 
-                    const recorder = this.mediaRecorder;
-                    if (recorder && recorder.state !== 'inactive') {
-                        recorder.stop();
+                    if (recorder.state !== 'inactive') {
+                        try {
+                            recorder.stop();
+                        } catch (stopError) {
+                            console.error('Could not stop the video recorder:', stopError);
+                            finish(null);
+                        }
                     }
                 }
             }, 50);
 
-               } catch (err) {
-            console.error('Video recording setup failed:', err);
-
-            // Release camera and microphone if setup fails.
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-
-            if (videoElement) {
-             videoElement.pause();
-             videoElement.srcObject = null;
-            }
+            return true;
+        } catch (error) {
+            console.error('Video recording setup failed:', error);
+            finish(null);
 
             alert(
                 'Unable to start recording. Please check camera ' +
                 'and microphone permissions, then try again.'
             );
 
-            if (onComplete) onComplete(null);
+            return false;
         }
     },
+
     readImageFile(file, onComplete) {
+        const finish = (attachment) => {
+            if (typeof onComplete === 'function') onComplete(attachment || null);
+        };
+
         if (!file) {
-            if (onComplete) onComplete(null);
+            finish(null);
+            return;
+        }
+
+        const supportedImage = typeof file.type === 'string' && file.type.startsWith('image/');
+        if (!supportedImage) {
+            alert('Please choose a valid image file.');
+            finish(null);
+            return;
+        }
+
+        const MAX_FILE_SIZE = 20 * 1024 * 1024;
+        if (file.size > MAX_FILE_SIZE) {
+            alert('Please choose an image smaller than 20 MB.');
+            finish(null);
             return;
         }
 
         const reader = new FileReader();
 
         reader.onerror = () => {
-            console.error("FileReader failed to read the image file.");
-            if (onComplete) onComplete(null);
+            console.error('FileReader failed to read the image file:', reader.error);
+            finish(null);
         };
 
-        reader.onload = (e) => {
+        reader.onabort = () => finish(null);
+
+        reader.onload = (event) => {
             const img = new Image();
 
             img.onerror = () => {
-                console.error("Image decoding failed (corrupted or unsupported format).");
+                console.error('Image decoding failed (corrupted or unsupported format).');
                 alert('Invalid image format or corrupted file.');
-                if (onComplete) onComplete(null);
+                finish(null);
             };
 
             img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 800;
-                const MAX_HEIGHT = 800;
-                let width = img.width;
-                let height = img.height;
+                try {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 800;
+                    const MAX_HEIGHT = 800;
+                    let width = img.width;
+                    let height = img.height;
 
-                if (width > height) {
-                    if (width > MAX_WIDTH) {
-                        height *= MAX_WIDTH / width;
-                        width = MAX_WIDTH;
+                    if (!width || !height) {
+                        throw new Error('The selected image has invalid dimensions.');
                     }
-                } else {
-                    if (height > MAX_HEIGHT) {
-                        width *= MAX_HEIGHT / height;
-                        height = MAX_HEIGHT;
+
+                    const scale = Math.min(1, MAX_WIDTH / width, MAX_HEIGHT / height);
+                    width = Math.max(1, Math.round(width * scale));
+                    height = Math.max(1, Math.round(height * scale));
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    const context = canvas.getContext('2d');
+                    if (!context) {
+                        throw new Error('Image processing is unavailable in this browser.');
                     }
+
+                    context.drawImage(img, 0, 0, width, height);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+
+                    if (!dataUrl || !dataUrl.startsWith('data:image/jpeg')) {
+                        throw new Error('The selected image could not be converted.');
+                    }
+
+                    const attachment = { type: 'photo', dataUrl };
+                    this.pendingAttachment = attachment;
+                    finish(attachment);
+                } catch (error) {
+                    console.error('Image processing failed:', error);
+                    alert('The selected image could not be processed. Please try another image.');
+                    finish(null);
                 }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-
-                const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-                const attachment = { type: 'photo', dataUrl: dataUrl };
-                this.pendingAttachment = attachment;
-                if (onComplete) onComplete(attachment);
             };
 
-            img.src = e.target.result;
+            img.src = event.target.result;
         };
 
         reader.readAsDataURL(file);
