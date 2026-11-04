@@ -1321,29 +1321,114 @@ document.addEventListener('DOMContentLoaded', async () => {
     const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
     let tokenClient = null;
     let accessToken = null;
+    let accessTokenExpiresAt = 0;
+    let authRequestPending = false;
+
+    function resetDriveSyncButton() {
+        const button = document.getElementById('gdriveSyncBtn');
+        if (!button) return;
+
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+        button.title = 'Sync to Google Drive';
+    }
+
+    function showDriveAuthorizationError(message) {
+        authRequestPending = false;
+        resetDriveSyncButton();
+
+        showAppModal({
+            title: 'Google Drive Authorization',
+            message,
+            icon: '⚠️'
+        });
+    }
 
     function initGoogleAuth() {
-        if (typeof google !== 'undefined' && google.accounts) {
+        if (
+            typeof google !== 'undefined' &&
+            google.accounts &&
+            google.accounts.oauth2 &&
+            typeof google.accounts.oauth2.initTokenClient === 'function'
+        ) {
             tokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: GOOGLE_CLIENT_ID,
                 scope: DRIVE_SCOPE,
                 callback: async (tokenResponse) => {
+                    authRequestPending = false;
+                    resetDriveSyncButton();
+
                     if (tokenResponse && tokenResponse.access_token) {
                         accessToken = tokenResponse.access_token;
+                        const expiresIn = Number(tokenResponse.expires_in) || 3600;
+                        accessTokenExpiresAt = Date.now() + expiresIn * 1000;
                         await performDriveBackup();
+                    } else {
+                        accessToken = null;
+                        accessTokenExpiresAt = 0;
+                        await showDriveAuthorizationError(
+                            'Google did not return an access token. Please try connecting again.'
+                        );
                     }
                 },
+                error_callback: (error) => {
+                    console.warn('Google Drive authorization popup failed:', error);
+                    accessToken = null;
+                    accessTokenExpiresAt = 0;
+                    showDriveAuthorizationError(
+                        'The Google sign-in window could not be completed. Please allow popups and try again.'
+                    );
+                }
             });
         }
     }
+
+    function requestDriveAccessToken() {
+        if (authRequestPending) return;
+
+        if (!tokenClient) initGoogleAuth();
+        if (!tokenClient) {
+            showDriveAuthorizationError(
+                'Google sign-in has not loaded. Check your connection and reload the app before syncing.'
+            );
+            return;
+        }
+
+        authRequestPending = true;
+        const button = document.getElementById('gdriveSyncBtn');
+        if (button) {
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            button.title = 'Connecting to Google Drive...';
+        }
+
+        try {
+            tokenClient.requestAccessToken({
+                prompt: accessToken ? '' : 'consent'
+            });
+        } catch (error) {
+            console.error('Google Drive token request failed:', error);
+            accessToken = null;
+            accessTokenExpiresAt = 0;
+            showDriveAuthorizationError(
+                'Google Drive could not be connected. Please try again.'
+            );
+        }
+    }
+
     window.addEventListener('load', initGoogleAuth);
 
     document.getElementById('gdriveSyncBtn')?.addEventListener('click', () => {
-        if (!tokenClient) initGoogleAuth();
-        if (!accessToken) {
-            tokenClient?.requestAccessToken({ prompt: 'consent' });
-        } else {
+        const tokenIsCurrent = Boolean(
+            accessToken &&
+            accessTokenExpiresAt &&
+            Date.now() < accessTokenExpiresAt - 60000
+        );
+
+        if (tokenIsCurrent) {
             performDriveBackup();
+        } else {
+            requestDriveAccessToken();
         }
     });
 
@@ -1372,6 +1457,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             );
 
             if (!searchRes.ok) {
+                if (searchRes.status === 401) {
+                    accessToken = null;
+                    accessTokenExpiresAt = 0;
+                }
                 throw new Error('Google Drive search failed with status ' + searchRes.status);
             }
 
@@ -1402,6 +1491,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
 
             if (!uploadRes.ok) {
+                if (uploadRes.status === 401) {
+                    accessToken = null;
+                    accessTokenExpiresAt = 0;
+                }
                 throw new Error('Google Drive upload failed with status ' + uploadRes.status);
             }
             uploadConfirmed = true;
