@@ -1738,20 +1738,50 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     startRecorderBtn?.addEventListener('click', async () => {
+        // Guard both the UI and controller in case the user taps repeatedly.
+        if (MediaController.isRecording || startRecorderBtn.disabled) return;
+
+        const recorderLabel = document.getElementById('recorderStatusLabel');
+        startRecorderBtn.disabled = true;
+        if (recorderLabel) recorderLabel.textContent = 'Recording...';
+        if (recordProgress) recordProgress.style.width = '0%';
         cameraViewportContainer?.classList.remove('hidden');
-        await MediaController.startThreeSecondRecording(cameraPreview, recordProgress, (attachment) => {
+
+        let completionHandled = false;
+        const handleRecordingComplete = (attachment) => {
+            if (completionHandled) return;
+            completionHandled = true;
+
+            startRecorderBtn.disabled = false;
+            if (recorderLabel) recorderLabel.textContent = 'Record 3s Clip';
             cameraViewportContainer?.classList.add('hidden');
+
             if (attachment && attachment.dataUrl) {
-               const videoPreview = document.createElement('video');
+                const videoPreview = document.createElement('video');
                 videoPreview.src = attachment.dataUrl;
                 videoPreview.controls = true;
                 videoPreview.playsInline = true;
                 videoPreview.className = 'w-full h-32 object-cover rounded-lg';
 
-                previewContent.replaceChildren(videoPreview);
-                mediaPreviewBox.classList.remove('hidden');
+                previewContent?.replaceChildren(videoPreview);
+                mediaPreviewBox?.classList.remove('hidden');
             }
-        });
+        };
+
+        try {
+            const started = await MediaController.startThreeSecondRecording(
+                cameraPreview,
+                recordProgress,
+                handleRecordingComplete
+            );
+
+            if (started !== true && !completionHandled) {
+                handleRecordingComplete(null);
+            }
+        } catch (error) {
+            console.error('Recording button flow failed:', error);
+            handleRecordingComplete(null);
+        }
     });
 
     clearMediaBtn?.addEventListener('click', () => {
