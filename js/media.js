@@ -50,6 +50,7 @@ const MediaController = {
             resetPreview();
             this.isRecording = false;
             this.mediaRecorder = null;
+            this.recordedChunks = [];
 
             if (typeof onComplete === 'function') {
                 try {
@@ -154,6 +155,7 @@ const MediaController = {
             };
 
             recorder.onstop = () => {
+                if (completed) return;
                 clearRecordingTimer();
                 stopStream();
                 resetPreview();
@@ -170,7 +172,9 @@ const MediaController = {
                     'video/webm';
 
                 const containerMimeType = recorderMimeType.split(';', 1)[0].trim().toLowerCase();
-                const blob = new Blob(this.recordedChunks, { type: containerMimeType });
+                const recordedChunks = this.recordedChunks.slice();
+                this.recordedChunks = [];
+                const blob = new Blob(recordedChunks, { type: containerMimeType });
                 const reader = new FileReader();
 
                 reader.onload = () => {
@@ -186,7 +190,12 @@ const MediaController = {
                 };
 
                 reader.onabort = () => finish(null);
-                reader.readAsDataURL(blob);
+                try {
+                    reader.readAsDataURL(blob);
+                } catch (readError) {
+                    console.error('Video data could not be read:', readError);
+                    finish(null);
+                }
             };
 
             recorder.start(100);
@@ -316,7 +325,12 @@ const MediaController = {
             img.src = event.target.result;
         };
 
-        reader.readAsDataURL(file);
+        try {
+            reader.readAsDataURL(file);
+        } catch (readError) {
+            console.error('Image file reading could not start:', readError);
+            finish(null);
+        }
     },
 
     setNoteAttachment(text) {
