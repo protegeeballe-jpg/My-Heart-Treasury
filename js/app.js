@@ -1227,14 +1227,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // App State & In-Memory Session PIN
     let currentHeartCount = 0;
-    let selectedDurationHours = 24;
-    let activeTimerInterval = null;
     let currentSelectedDateKey = null;
-    let cachedSession = null;
     let sessionPin = null;
+    let isSavingTreasury = false;
 
     const savingsDateInput = document.getElementById('savingsDate');
-    const sessionCountdown = document.getElementById('sessionCountdown');
     const heartCountBadge = document.getElementById('heartCountBadge');
     const tapHeartBtn = document.getElementById('tapHeartBtn');
     const saveTreasuryBtn = document.getElementById('saveTreasuryBtn');
@@ -1352,17 +1349,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             const fileContent = JSON.stringify(dbDump, null, 2);
 
             const searchRes = await fetch(
-                "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='treasury-backup.json'",
+                "https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=name='treasury-backup.json'&fields=files(id,name)",
                 { headers: { Authorization: `Bearer ${accessToken}` } }
             );
-            const searchData = await searchRes.json();
-            const existingFile = searchData.files && searchData.files[0];
+            if (!searchRes.ok) {
+                throw new Error('Google Drive search failed with status ' + searchRes.status);
+            }
 
-            const metadata = {
-                name: 'treasury-backup.json',
-                mimeType: 'application/json',
-                parents: existingFile ? [] : ['appDataFolder']
-            };
+            const searchData = await searchRes.json();
+            if (!searchData || !Array.isArray(searchData.files)) {
+                throw new Error('Google Drive returned an invalid file list.');
+            }
+
+            const existingFile = searchData.files[0] || null;
+            // Parent assignment is only supplied when creating a new file.
+            // Drive does not accept an empty parents array as an update instruction.
+            const metadata = existingFile
+                ? { name: 'treasury-backup.json', mimeType: 'application/json' }
+                : { name: 'treasury-backup.json', mimeType: 'application/json', parents: ['appDataFolder'] };
 
             const form = new FormData();
             form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -1547,43 +1551,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    async function initSession() {
-        cachedSession = await TreasuryStorage.getActiveSession();
-        if (!cachedSession) {
-            const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-            cachedSession = { targetTime, duration: selectedDurationHours };
-            await TreasuryStorage.setActiveSession(cachedSession);
-        }
-        updateCountdownDisplay();
-    }
 
-    function updateCountdownDisplay() {
-        if (!cachedSession || !sessionCountdown) return;
-
-        const diff = Math.max(0, Math.floor((cachedSession.targetTime - Date.now()) / 1000));
-        const hours = Math.floor(diff / 3600);
-        const minutes = Math.floor((diff % 3600) / 60);
-        const seconds = diff % 60;
-
-        sessionCountdown.textContent = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-    }
-
-    await initSession();
-    clearInterval(activeTimerInterval);
-    activeTimerInterval = setInterval(updateCountdownDisplay, 1000);
-
-    document.querySelectorAll('.btn-duration').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            document.querySelectorAll('.btn-duration').forEach(b => b.classList.remove('active'));
-            e.target.classList.add('active');
-            selectedDurationHours = parseInt(e.target.dataset.duration);
-            
-            const targetTime = Date.now() + selectedDurationHours * 3600 * 1000;
-            cachedSession = { targetTime, duration: selectedDurationHours };
-            await TreasuryStorage.setActiveSession(cachedSession);
-            updateCountdownDisplay();
-        });
-    });
 
     tapHeartBtn?.addEventListener('click', (e) => {
         currentHeartCount++;
@@ -1617,7 +1585,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     saveTreasuryBtn?.addEventListener('click', async () => {
-        if (currentHeartCount === 0) {
+        if (isSavingTreasury) return;
+
+        if (currentHeartCount < 1) {
             await showAppModal({
                 title: "Empty Treasury",
                 message: "Tap the heart to collect acts of kindness, love & forgiveness first!",
@@ -1626,31 +1596,86 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
-        const dateKey = savingsDateInput ? savingsDateInput.value : getTodayLocalDate();
-        const locationData = await LocationController.getCurrentLocation();
+        const dateKey = savingsDateInput?.value || getTodayLocalDate();
+        if (!TreasuryStorage._isValidDateKey(dateKey)) {
+            await showAppModal({
+                title: "Invalid Date",
+                message: "Please choose a valid calendar date before saving.",
+                icon: "⚠️"
+            });
+            return;
+        }
 
-        const sessionPayload = {
-            hearts: currentHeartCount,
-            attachment: {
-                ...(MediaController.pendingAttachment || {}),
-                location: locationData
+        // Snapshot the deposit. New hearts or a new attachment added while
+        // storage/location work is in progress must remain in the user's draft.
+        const heartsToSave = currentHeartCount;
+        const attachmentAtStart = MediaController.pendingAttachment;
+        const attachmentSnapshot = attachmentAtStart ? { ...attachmentAtStart } : {};
+
+        isSavingTreasury = true;
+        if (saveTreasuryBtn) {
+            saveTreasuryBtn.disabled = true;
+            saveTreasuryBtn.setAttribute('aria-busy', 'true');
+            saveTreasuryBtn.classList.add('opacity-60', 'cursor-wait');
+        }
+
+        try {
+            const locationData = await LocationController.getCurrentLocation();
+            const sessionPayload = {
+                hearts: heartsToSave,
+                attachment: {
+                    ...attachmentSnapshot,
+                    location: locationData
+                }
+            };
+
+            const saved = await TreasuryStorage.saveDayEntry(dateKey, sessionPayload, sessionPin);
+            if (saved !== true) {
+                throw new Error('The storage engine did not confirm that the Treasury entry was saved.');
             }
-        };
 
-        await TreasuryStorage.saveDayEntry(dateKey, sessionPayload, sessionPin);
+            currentHeartCount = Math.max(0, currentHeartCount - heartsToSave);
+            if (heartCountBadge) {
+                heartCountBadge.textContent = currentHeartCount + (currentHeartCount === 1 ? ' Heart' : ' Hearts');
+            }
 
-        const locationNotice = locationData ? "\n📍 Location tagged!" : "";
-        await showAppModal({
-            title: "Treasury Saved",
-            message: `Successfully deposited ${currentHeartCount} ${currentHeartCount === 1 ? 'heart' : 'hearts'} to ${dateKey}! ✨${locationNotice}`,
-            icon: "🌟"
-        });
-        
-        currentHeartCount = 0;
-        if (heartCountBadge) heartCountBadge.textContent = "0 Hearts";
-        MediaController.pendingAttachment = null;
-        const indicator = document.getElementById('attachmentIndicator');
-        if (indicator) indicator.textContent = "Attach";
+            // Clear only the attachment that was included in this deposit.
+            // A different attachment added during saving must be preserved.
+            if (MediaController.pendingAttachment === attachmentAtStart) {
+                MediaController.pendingAttachment = null;
+                if (heartNoteInput) heartNoteInput.value = '';
+                if (photoInput) photoInput.value = '';
+                if (previewContent) previewContent.replaceChildren();
+                mediaPreviewBox?.classList.add('hidden');
+
+                const indicator = document.getElementById('attachmentIndicator');
+                if (indicator) {
+                    indicator.textContent = 'Attach';
+                    indicator.classList.remove('text-rose-400', 'font-bold');
+                }
+            }
+
+            const locationNotice = locationData ? "\n📍 Location tagged!" : "";
+            await showAppModal({
+                title: "Treasury Saved",
+                message: `Successfully deposited ${heartsToSave} ${heartsToSave === 1 ? 'heart' : 'hearts'} to ${dateKey}! ✨${locationNotice}`,
+                icon: "🌟"
+            });
+        } catch (error) {
+            console.error('Treasury save failed:', error);
+            await showAppModal({
+                title: "Treasury Not Saved",
+                message: "Your hearts and attachment are still here. Please check your device storage and try again.\n\n" + (error?.message || 'Unknown storage error.'),
+                icon: "⚠️"
+            });
+        } finally {
+            isSavingTreasury = false;
+            if (saveTreasuryBtn) {
+                saveTreasuryBtn.disabled = false;
+                saveTreasuryBtn.removeAttribute('aria-busy');
+                saveTreasuryBtn.classList.remove('opacity-60', 'cursor-wait');
+            }
+        }
     });
 
     const attachmentModal = document.getElementById('attachmentModal');
@@ -1683,8 +1708,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         MediaController.readImageFile(file, (attachment) => {
             if (attachment && attachment.dataUrl) {
-                previewContent.innerHTML = `<img src="${attachment.dataUrl}" class="w-full h-32 object-cover rounded-lg">`;
-                mediaPreviewBox.classList.remove('hidden');
+                const previewImage = document.createElement('img');
+                previewImage.src = attachment.dataUrl;
+                previewImage.alt = 'Selected memory photo';
+                previewImage.className = 'w-full h-32 object-cover rounded-lg';
+                previewContent?.replaceChildren(previewImage);
+                mediaPreviewBox?.classList.remove('hidden');
             }
         });
     });
@@ -1808,7 +1837,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             const monthStr = String(month + 1).padStart(2, '0');
             const dateKey = `${year}-${monthStr}-${dayStr}`;
 
-            cell.innerHTML = `<span class="font-bold">${day}</span>`;
+            const dayLabel = document.createElement('span');
+            dayLabel.className = 'font-bold';
+            dayLabel.textContent = String(day);
+            cell.appendChild(dayLabel);
 
             if (allEntries[dateKey]) {
                 cell.classList.add('has-data');
@@ -1842,6 +1874,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         lucide.createIcons();
     }
 
+    function createLocationLink(locationData) {
+        if (!locationData) return null;
+
+        const latitude = Number(locationData.latitude);
+        const longitude = Number(locationData.longitude);
+
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+            latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+            return null;
+        }
+
+        const link = document.createElement('a');
+        link.href = 'https://www.google.com/maps?q=' + encodeURIComponent(latitude + ',' + longitude);
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.className = 'inline-flex items-center gap-1 mt-2 px-2.5 py-1 text-[11px] font-medium text-rose-300 bg-rose-950/40 border border-rose-800/50 rounded-full hover:bg-rose-900/50 transition-colors';
+        link.textContent = '📍 View on Google Maps (' + latitude.toFixed(4) + ', ' + longitude.toFixed(4) + ')';
+        return link;
+    }
+
     document.getElementById('viewMemoriesBtn')?.addEventListener('click', async () => {
         if (!currentSelectedDateKey) return;
         const allEntries = await TreasuryStorage.getAllEntries(sessionPin);
@@ -1858,22 +1910,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             card.className = 'bg-slate-800/80 p-4 rounded-xl border border-slate-700 space-y-2';
             
             const heartsCount = entry.totalHearts || entry.hearts || 0;
-            card.innerHTML = `
-                <div class="flex justify-between items-center text-xs text-rose-400 font-semibold">
-                    <span>❤️ ${heartsCount} Hearts Collected</span>
-                </div>
-            `;
+            const heartsSummary = document.createElement('div');
+            heartsSummary.className = 'flex justify-between items-center text-xs text-rose-400 font-semibold';
+            const heartsSummaryText = document.createElement('span');
+            heartsSummaryText.textContent = '❤️ ' + String(heartsCount) + ' Hearts Collected';
+            heartsSummary.appendChild(heartsSummaryText);
+            card.appendChild(heartsSummary);
 
             const rootLocation = entry.attachment?.location;
-            if (rootLocation && rootLocation.mapsUrl) {
-                const locBtn = document.createElement('a');
-                locBtn.href = rootLocation.mapsUrl;
-                locBtn.target = '_blank';
-                locBtn.rel = 'noopener noreferrer';
-                locBtn.className = 'inline-flex items-center gap-1 mt-2 px-2.5 py-1 text-[11px] font-medium text-rose-300 bg-rose-950/40 border border-rose-800/50 rounded-full hover:bg-rose-900/50 transition-colors';
-                locBtn.innerHTML = `📍 View on Google Maps (${rootLocation.latitude.toFixed(4)}, ${rootLocation.longitude.toFixed(4)})`;
-                card.appendChild(locBtn);
-            }
+            const rootLocationLink = createLocationLink(rootLocation);
+            if (rootLocationLink) card.appendChild(rootLocationLink);
 
             if (entry.entries && Array.isArray(entry.entries)) {
                 entry.entries.forEach(sub => {
@@ -1898,16 +1944,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     }
 
-                    const subLocation = sub.location;
-                    if (subLocation && subLocation.mapsUrl) {
-                        const locBtn = document.createElement('a');
-                        locBtn.href = subLocation.mapsUrl;
-                        locBtn.target = '_blank';
-                        locBtn.rel = 'noopener noreferrer';
-                        locBtn.className = 'inline-flex items-center gap-1 mt-2 px-2.5 py-1 text-[11px] font-medium text-rose-300 bg-rose-950/40 border border-rose-800/50 rounded-full hover:bg-rose-900/50 transition-colors';
-                        locBtn.innerHTML = `📍 View on Google Maps (${subLocation.latitude.toFixed(4)}, ${subLocation.longitude.toFixed(4)})`;
-                        card.appendChild(locBtn);
-                    }
+                    const subLocationLink = createLocationLink(sub.location);
+                    if (subLocationLink) card.appendChild(subLocationLink);
                 });
             }
             timelineList.appendChild(card);
@@ -1947,10 +1985,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('soundToggleBtn')?.addEventListener('click', () => {
         soundEnabled = !soundEnabled;
         AudioController.setEnabled(soundEnabled);
+
         const soundBtn = document.getElementById('soundToggleBtn');
         if (soundBtn) {
-            soundBtn.innerHTML = `<i data-lucide="${soundEnabled ? 'volume-2' : 'volume-x'}" id="soundIcon"></i>`;
+            soundBtn.replaceChildren();
+            const icon = document.createElement('i');
+            icon.id = 'soundIcon';
+            icon.dataset.lucide = soundEnabled ? 'volume-2' : 'volume-x';
+            icon.className = 'w-4 h-4';
+            soundBtn.appendChild(icon);
             lucide.createIcons();
+            soundBtn.setAttribute('aria-label', soundEnabled ? 'Mute sound' : 'Enable sound');
         }
     });
 });
