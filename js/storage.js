@@ -7,6 +7,7 @@ const TreasuryStorage = {
     storeName: 'vault',
     dbInstance: null,
     initPromise: null,
+    saveQueue: Promise.resolve(),
 
     async init() {
         if (this.dbInstance) return this.dbInstance;
@@ -276,88 +277,101 @@ const TreasuryStorage = {
     },
 
     async saveDayEntry(dateKey, payload, sessionPin) {
-        try {
-            if (!this._isValidDateKey(dateKey)) {
-                throw new TypeError('Choose a valid calendar date before saving.');
-            }
-
-            if (!payload || !Number.isSafeInteger(payload.hearts) || payload.hearts < 1) {
-                throw new TypeError('At least one whole heart is required to save a Treasury entry.');
-            }
-
-            await this.init();
-            const db = await this.getDatabase(sessionPin);
-            const existingEntry = db[dateKey] || {};
-            if (typeof existingEntry !== 'object' || Array.isArray(existingEntry)) {
-                throw new TypeError('Existing Treasury entry for ' + dateKey + ' is invalid.');
-            }
-
-            const currentTotal = Number(existingEntry.totalHearts ?? existingEntry.hearts ?? 0);
-            if (!Number.isSafeInteger(currentTotal) || currentTotal < 0 ||
-                !Number.isSafeInteger(currentTotal + payload.hearts)) {
-                throw new TypeError('Heart total for ' + dateKey + ' is invalid or too large.');
-            }
-
-            if (existingEntry.entries !== undefined && !Array.isArray(existingEntry.entries)) {
-                throw new TypeError('Memory entries for ' + dateKey + ' are invalid.');
-            }
-
-            const entry = existingEntry;
-            entry.totalHearts = currentTotal + payload.hearts;
-            if (!Array.isArray(entry.entries)) entry.entries = [];
-
-            const attachment = payload.attachment || {};
-            let media = null;
-
-            if (attachment.type === 'photo' || attachment.type === 'video') {
-                if (typeof attachment.dataUrl !== 'string' || !attachment.dataUrl.startsWith('data:')) {
-                    throw new TypeError('The attached media data is invalid. Please attach the file again.');
+        const persistEntry = async () => {
+            try {
+                if (!this._isValidDateKey(dateKey)) {
+                    throw new TypeError('Choose a valid calendar date before saving.');
                 }
-                media = { type: attachment.type, dataUrl: attachment.dataUrl };
-            }
-
-            const note = attachment.type === 'note'
-                ? (attachment.text || null)
-                : (attachment.note || null);
-
-            if (note !== null && typeof note !== 'string') {
-                throw new TypeError('The attached memory note must be text.');
-            }
-
-            entry.entries.push({
-                timestamp: attachment.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                hearts: payload.hearts,
-                note,
-                media
-            });
-
-            if (payload.attachment) {
-                // Media bytes are stored once in the timeline entry. The root
-                // attachment keeps only lightweight metadata (e.g. location).
-                const attachmentMetadata = { ...payload.attachment };
-                delete attachmentMetadata.dataUrl;
-                entry.attachment = attachmentMetadata;
-            }
-            db[dateKey] = entry;
-            this._validateDatabase(db);
-
-            const pinCheck = await this.getPin();
-            if (pinCheck) {
-                if (!sessionPin || !(await this.verifyPin(sessionPin))) {
-                    throw new Error('A valid Treasury PIN is required to save the encrypted vault.');
-                }
-                await this.set('treasury_db', await this._encrypt(sessionPin, db));
-            } else {
-                await this.set('treasury_db', db);
-            }
-
-            return true;
-        } catch (error) {
-            console.error('Failed to save Treasury entry:', error);
-            throw error;
-        }
-    },
     
+                if (!payload || !Number.isSafeInteger(payload.hearts) || payload.hearts < 1) {
+                    throw new TypeError('At least one whole heart is required to save a Treasury entry.');
+                }
+    
+                await this.init();
+                const db = await this.getDatabase(sessionPin);
+                const existingEntry = db[dateKey] || {};
+                if (typeof existingEntry !== 'object' || Array.isArray(existingEntry)) {
+                    throw new TypeError('Existing Treasury entry for ' + dateKey + ' is invalid.');
+                }
+    
+                const currentTotal = Number(existingEntry.totalHearts ?? existingEntry.hearts ?? 0);
+                if (!Number.isSafeInteger(currentTotal) || currentTotal < 0 ||
+                    !Number.isSafeInteger(currentTotal + payload.hearts)) {
+                    throw new TypeError('Heart total for ' + dateKey + ' is invalid or too large.');
+                }
+    
+                if (existingEntry.entries !== undefined && !Array.isArray(existingEntry.entries)) {
+                    throw new TypeError('Memory entries for ' + dateKey + ' are invalid.');
+                }
+    
+                const entry = existingEntry;
+                entry.totalHearts = currentTotal + payload.hearts;
+                if (!Array.isArray(entry.entries)) entry.entries = [];
+    
+                const attachment = payload.attachment || {};
+                let media = null;
+    
+                if (attachment.type === 'photo' || attachment.type === 'video') {
+                    if (typeof attachment.dataUrl !== 'string' || !attachment.dataUrl.startsWith('data:')) {
+                        throw new TypeError('The attached media data is invalid. Please attach the file again.');
+                    }
+                    media = { type: attachment.type, dataUrl: attachment.dataUrl };
+                }
+    
+                const note = attachment.type === 'note'
+                    ? (attachment.text || null)
+                    : (attachment.note || null);
+    
+                if (note !== null && typeof note !== 'string') {
+                    throw new TypeError('The attached memory note must be text.');
+                }
+    
+                entry.entries.push({
+                    timestamp: attachment.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    hearts: payload.hearts,
+                    note,
+                    media
+                });
+    
+                if (payload.attachment) {
+                    // Media bytes are stored once in the timeline entry. The root
+                    // attachment keeps only lightweight metadata (e.g. location).
+                    const attachmentMetadata = { ...payload.attachment };
+                    delete attachmentMetadata.dataUrl;
+                    entry.attachment = attachmentMetadata;
+                }
+                db[dateKey] = entry;
+                this._validateDatabase(db);
+    
+                const pinCheck = await this.getPin();
+                if (pinCheck) {
+                    if (!sessionPin || !(await this.verifyPin(sessionPin))) {
+                        throw new Error('A valid Treasury PIN is required to save the encrypted vault.');
+                    }
+                    await this.set('treasury_db', await this._encrypt(sessionPin, db));
+                } else {
+                    await this.set('treasury_db', db);
+                }
+    
+                return true;
+            } catch (error) {
+                console.error('Failed to save Treasury entry:', error);
+                throw error;
+            }
+        };
+
+        // Web Locks serializes writes across tabs on browsers that support it.
+        if (typeof navigator !== 'undefined' &&
+            navigator.locks &&
+            typeof navigator.locks.request === 'function') {
+            return navigator.locks.request('my-heart-treasury-vault-save', { mode: 'exclusive' }, persistEntry);
+        }
+
+        // Fallback: serialize all saves in this page when Web Locks is unavailable.
+        const queuedSave = this.saveQueue.then(persistEntry, persistEntry);
+        this.saveQueue = queuedSave.catch(() => undefined);
+        return queuedSave;
+    },
     async getPin() {
         try {
             await this.init();
