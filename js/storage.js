@@ -142,9 +142,23 @@ const TreasuryStorage = {
                         throw new TypeError('Memory note ' + (index + 1) + ' for ' + dateKey + ' must be text.');
                     }
 
-                    if (entry.media !== undefined && entry.media !== null &&
-                        (typeof entry.media !== 'object' || Array.isArray(entry.media))) {
-                        throw new TypeError('Memory media ' + (index + 1) + ' for ' + dateKey + ' is invalid.');
+                    if (entry.media !== undefined && entry.media !== null) {
+                        if (typeof entry.media !== 'object' || Array.isArray(entry.media)) {
+                            throw new TypeError('Memory media ' + (index + 1) + ' for ' + dateKey + ' is invalid.');
+                        }
+
+                        if (entry.media.type !== undefined &&
+                            !['photo', 'video'].includes(entry.media.type)) {
+                            throw new TypeError('Memory media type for ' + dateKey + ' is unsupported.');
+                        }
+
+                        if (entry.media.dataUrl !== undefined) {
+                            const expectedPrefix = entry.media.type === 'video' ? 'data:video/' : 'data:image/';
+                            if (typeof entry.media.dataUrl !== 'string' ||
+                                !entry.media.dataUrl.startsWith(expectedPrefix)) {
+                                throw new TypeError('Memory media data for ' + dateKey + ' is invalid.');
+                            }
+                        }
                     }
                 });
             }
@@ -317,7 +331,13 @@ const TreasuryStorage = {
                 media
             });
 
-            if (payload.attachment) entry.attachment = payload.attachment;
+            if (payload.attachment) {
+                // Media bytes are stored once in the timeline entry. The root
+                // attachment keeps only lightweight metadata (e.g. location).
+                const attachmentMetadata = { ...payload.attachment };
+                delete attachmentMetadata.dataUrl;
+                entry.attachment = attachmentMetadata;
+            }
             db[dateKey] = entry;
             this._validateDatabase(db);
 
@@ -433,20 +453,25 @@ const TreasuryStorage = {
     async exportData(sessionPin) {
         try {
             const db = await this.getDatabase(sessionPin);
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db, null, 2));
+            const backupBlob = new Blob([JSON.stringify(db, null, 2)], { type: 'application/json' });
+            const downloadUrl = URL.createObjectURL(backupBlob);
             const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", `heart_treasury_backup_${new Date().toISOString().split('T')[0]}.json`);
+            downloadAnchor.href = downloadUrl;
+            downloadAnchor.download = `heart_treasury_backup_${new Date().toISOString().split('T')[0]}.json`;
             document.body.appendChild(downloadAnchor);
             downloadAnchor.click();
             downloadAnchor.remove();
+            setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
         } catch (err) {
             alert("Export failed: " + err.message);
         }
     },
 
     async importData(file, sessionPin, callback) {
+        let callbackFinished = false;
         const finish = (success, error = null) => {
+            if (callbackFinished) return;
+            callbackFinished = true;
             if (error) console.error('Import failed:', error);
             if (typeof callback === 'function') callback(success);
         };
