@@ -146,28 +146,28 @@
         </p>
     </section>
 
-    <!-- Bottom Action Bar: Calendar, Bible, Attach & Save Vault (Updated to 4 columns) -->
-    <div class="home-action-bar w-full max-w-md mx-auto grid grid-cols-4 gap-1.5 pt-2">
-        <button id="openCalendarBtn" class="py-3 px-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-[11px] flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
-            <i data-lucide="calendar" class="w-4 h-4 text-rose-400"></i>
-            <span>Calendar</span>
-        </button>
+   <!-- Bottom Action Bar: Calendar, Bible, Attach & Save Vault (Smaller & Transparent) -->
+<div class="home-action-bar w-full max-w-md mx-auto grid grid-cols-4 gap-1.5 pt-2">
+    <button id="openCalendarBtn" class="py-1.5 px-1 bg-transparent hover:bg-white/5 text-slate-300 hover:text-white rounded-xl font-medium text-[10px] flex flex-col items-center justify-center gap-0.5 transition-colors">
+        <i data-lucide="calendar" class="w-3.5 h-3.5 text-rose-400"></i>
+        <span>Calendar</span>
+    </button>
 
-        <button id="openBibleModalBtn" class="py-3 px-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-[11px] flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
-            <i data-lucide="book-open" class="w-4 h-4 text-rose-400"></i>
-            <span>Bible</span>
-        </button>
+    <button id="openBibleModalBtn" class="py-1.5 px-1 bg-transparent hover:bg-white/5 text-slate-300 hover:text-white rounded-xl font-medium text-[10px] flex flex-col items-center justify-center gap-0.5 transition-colors">
+        <i data-lucide="book-open" class="w-3.5 h-3.5 text-rose-400"></i>
+        <span>Bible</span>
+    </button>
 
-        <button id="openAttachmentModalBtn" class="py-3 px-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 rounded-2xl font-semibold text-[11px] flex flex-col items-center justify-center gap-1 border border-slate-700 shadow-md">
-            <i data-lucide="paperclip" class="w-4 h-4 text-rose-400"></i>
-            <span id="attachmentIndicator" class="truncate max-w-[70px]">Attach</span>
-        </button>
+    <button id="openAttachmentModalBtn" class="py-1.5 px-1 bg-transparent hover:bg-white/5 text-slate-300 hover:text-white rounded-xl font-medium text-[10px] flex flex-col items-center justify-center gap-0.5 transition-colors">
+        <i data-lucide="paperclip" class="w-3.5 h-3.5 text-rose-400"></i>
+        <span id="attachmentIndicator" class="truncate max-w-[70px]">Attach</span>
+    </button>
 
-        <button id="saveTreasuryBtn" class="py-3 px-1.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-2xl font-semibold text-[11px] flex flex-col items-center justify-center gap-1 shadow-lg shadow-rose-500/20">
-            <i data-lucide="bookmark-plus" class="w-4 h-4"></i>
-            <span>Save Vault</span>
-        </button>
-    </div>
+    <button id="saveTreasuryBtn" class="py-1.5 px-1 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white rounded-xl font-medium text-[10px] flex flex-col items-center justify-center gap-0.5 shadow-sm shadow-rose-500/20 transition-all">
+        <i data-lucide="bookmark-plus" class="w-3.5 h-3.5"></i>
+        <span>Save Vault</span>
+    </button>
+</div>
 
     <!-- Bible Study Modal Interface -->
     <div id="bibleStudyModal" class="modal-backdrop hidden">
