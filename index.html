@@ -63,25 +63,25 @@
             </div>
     </header>
             
-            <!-- Google Drive Sync Button -->
-            <button id="gdriveSyncBtn" class="p-2 rounded-xl bg-transparent hover:bg-white text-rose-400 hover:bg-slate-700 transition" title="Sync to Google Drive">
-                <i data-lucide="cloud" class="w-3 h-3"></i>
-            </button>
-            <button id="openPinSettingsBtn" class="p-2 rounded-xl bg-transparent hover:bg-white text-rose-400" title="Set PIN Lock">
-                <i data-lucide="lock" class="w-3 h-3"></i>
-            </button>
-            <button id="soundToggleBtn" class="p-2 rounded-xl bg-transparent hover:bg-white text-rose-400" aria-label="Toggle Sound">
-                <i id="soundIcon" data-lucide="volume-2" class="w-3 h-3"></i>
-            </button>
-            <button id="exportBtn" class="p-2 rounded-xl bg-transparent hover:bg-white text-rose-400" title="Export Backup">
-                <i data-lucide="download" class="w-3 h-3"></i>
-            </button>
-            <label id="importBtn" class="p-2 rounded-xl bg-transparent hover:bg-white text-rose-400 cursor-pointer" title="Import Backup">
-                <i data-lucide="upload" class="w-3 h-3"></i>
-                <input type="file" id="importFileInput" accept=".json" class="hidden">
-            </label>
-        </div>
-
+            <div class="flex items-center gap-1">
+    <!-- Google Drive Sync Button -->
+    <button id="gdriveSyncBtn" class="p-2 rounded-xl bg-transparent text-rose-400 hover:bg-slate-700/50 transition" title="Sync to Google Drive">
+        <i data-lucide="cloud" class="w-3 h-3"></i>
+    </button>
+    <button id="openPinSettingsBtn" class="p-2 rounded-xl bg-transparent text-rose-400 hover:bg-slate-700/50 transition" title="Set PIN Lock">
+        <i data-lucide="lock" class="w-3 h-3"></i>
+    </button>
+    <button id="soundToggleBtn" class="p-2 rounded-xl bg-transparent text-rose-400 hover:bg-slate-700/50 transition" aria-label="Toggle Sound">
+        <i id="soundIcon" data-lucide="volume-2" class="w-3 h-3"></i>
+    </button>
+    <button id="exportBtn" class="p-2 rounded-xl bg-transparent text-rose-400 hover:bg-slate-700/50 transition" title="Export Backup">
+        <i data-lucide="download" class="w-3 h-3"></i>
+    </button>
+    <label id="importBtn" class="p-2 rounded-xl bg-transparent text-rose-400 hover:bg-slate-700/50 transition cursor-pointer" title="Import Backup">
+        <i data-lucide="upload" class="w-3 h-3"></i>
+        <input type="file" id="importFileInput" accept=".json" class="hidden">
+    </label>
+</div>
     </section>
     <!-- Compact Verse of the Day — Main Screen -->
     <section
