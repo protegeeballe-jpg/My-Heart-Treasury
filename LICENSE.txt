@@ -1,8 +1,21 @@
+PROPRIETARY LICENSE AND TERMS OF USE
 
-Copyright (c) 2026 protegeeballe-jpg. All rights reserved.
+Copyright (c) 2026 my heart treasury / Author. All Rights Reserved.
 
-1. PERMISSION: You may view, download this software solely for personal, non-commercial use.
-2. COMMERCIAL RESTRICTION: You may NOT sell, sub-license, rent, or monetize this software or any modified versions of it.
-3. OWNERSHIP: Sole ownership and copyright of the original software remain exclusively with the author.
+1. OWNERSHIP
+All rights, title, and interest in and to this software, repository, source code, game mechanics, visual assets, artwork, audio, documentation, ideas, and design (collectively, the "Software") are and shall remain the sole and exclusive intellectual property of the Author.
 
-4. NO WARRANTY: THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
+2. RESTRICTIONS
+By accessing or downloading this Software, you agree to the following terms:
+
+  a. NO COPYING OR REDISTRIBUTION: You may not copy, duplicate, modify, sub-license, host, publish, or redistribute the Software, in whole or in part, in any form or medium, without prior written permission from the Author.
+  
+  b. NO COMMERCIAL USE: You may not use, leverage, sell, monetize, or distribute this Software—or any derivative work derived from its code, design, or assets—to gain profit, generate revenue, or achieve commercial advantage of any kind.
+  
+  c. NO AI OR MACHINE LEARNING MODEL TRAINING: You are expressly prohibited from using any portion of this Software, repository, source code, design elements, or associated media as input, training data, reference, or fine-tuning datasets for artificial intelligence (AI), machine learning models, neural networks, or automated code/content generation systems.
+
+3. LIMITED PERSONAL ACCESS
+Permission is granted solely to view the source code as publicly hosted on GitHub for personal evaluation, review, or testing purposes. Running a local instance strictly for personal, non-commercial experimentation is permitted, provided no code or assets are re-hosted or redistributed.
+
+4. DISCLAIMER OF WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM OR IN CONNECTION WITH THE SOFTWARE.
